@@ -115,7 +115,7 @@ export const ledgerOps = {
     return state.mailboxes[owner];
   },
 
-  setPolicy(state: LedgerState, owner: string, policy: MailboxPolicy, retention?: number) {
+  setPolicy(state: LedgerState, owner: string, policy: MailboxPolicy, retention: number | undefined) {
     const mb = state.mailboxes[owner];
     if (!mb) throw new LedgerError("MailboxNotFound");
     mb.policy = policy;
