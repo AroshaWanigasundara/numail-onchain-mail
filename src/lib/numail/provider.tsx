@@ -153,7 +153,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         }
         const provider = new WsProvider(url, false);
         await provider.connect();
-        const api = await ApiPromise.create({ provider, throwOnConnect: true, noInitWarn: true });
+        const api = await ApiPromise.create({ provider: provider as never, throwOnConnect: true, noInitWarn: true });
         apiRef.current = api;
         const chain = await api.rpc.system.chain();
         setChainName(chain.toString());
@@ -227,7 +227,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       const { ApiPromise, WsProvider } = await import("@polkadot/api");
       const provider = new WsProvider(url, false);
       await provider.connect();
-      const api = await ApiPromise.create({ provider, throwOnConnect: true, noInitWarn: true });
+      const api = await ApiPromise.create({ provider: provider as never, throwOnConnect: true, noInitWarn: true });
       const chain = await api.rpc.system.chain();
       const hasPallet = Boolean((api.tx as Record<string, unknown>)["numail"]);
       await api.disconnect();
