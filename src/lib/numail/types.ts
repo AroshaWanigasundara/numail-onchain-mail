@@ -3,15 +3,15 @@ export type PolicyKind = "Open" | "ContactsOnly" | "MinTrustScore" | "PostageReq
 export interface MailboxPolicy {
   kind: PolicyKind;
   /** used for MinTrustScore */
-  minTrustScore?: number;
+  minTrustScore?: number | undefined;
   /** used for PostageRequired, in plancks (display unit handled in UI) */
-  postage?: number;
+  postage?: number | undefined;
 }
 
 export interface Mailbox {
   owner: string;
   policy: MailboxPolicy;
-  retention?: number;
+  retention?: number | undefined;
   folders: string[];
   createdAtBlock: number;
   createdAt: number;
@@ -33,10 +33,10 @@ export interface MailEnvelope {
   subjectHash: string;
   bodyRef: string;
   attachments: Attachment[];
-  threadParent?: string;
+  threadParent?: string | undefined;
   block: number;
   timestamp: number;
-  postage?: number;
+  postage?: number | undefined;
 }
 
 export interface DeliveryState {
@@ -58,8 +58,8 @@ export interface NumailEvent {
     | "PolicyUpdated"
     | "MailboxCreated"
     | "MailMoved";
-  mailId?: string;
-  account?: string;
+  mailId?: string | undefined;
+  account?: string | undefined;
   timestamp: number;
   detail: string;
 }

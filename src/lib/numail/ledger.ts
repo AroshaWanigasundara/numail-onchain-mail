@@ -139,8 +139,8 @@ export const ledgerOps = {
       subject: string;
       body: string;
       attachments: Attachment[];
-      threadParent?: string;
-      postage?: number;
+      threadParent?: string | undefined;
+      postage?: number | undefined;
     },
   ) {
     if (input.recipients.length === 0) throw new LedgerError("NoRecipients");
