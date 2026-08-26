@@ -1,24 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { MailboxPage } from "@/components/numail/MailboxPage";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "NuMail — On-Chain Email on Polkadot" },
+      {
+        name: "description",
+        content:
+          "NuMail is an on-chain email client for the Polkadot NuMail pallet: encrypted subjects, folders, threads, postage policies and blocklists.",
+      },
+      { property: "og:title", content: "NuMail — On-Chain Email on Polkadot" },
+      {
+        property: "og:description",
+        content:
+          "Send and receive verifiable on-chain correspondence with folders, threads, acceptance policies and real-time chain events.",
+      },
+    ],
+  }),
+  component: MailboxPage,
 });
-
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
