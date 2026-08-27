@@ -46,4 +46,6 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Build a Node.js server (behind nginx) instead of the default Cloudflare Worker output.
+  nitro: { preset: "node-server" },
 });
