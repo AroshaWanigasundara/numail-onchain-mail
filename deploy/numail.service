@@ -1,0 +1,20 @@
+[Unit]
+Description=NuMail TanStack Start Node Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/numail
+
+# Port the Node/Nitro server listens on. Nginx upstream must match this.
+Environment="PORT=3000"
+Environment="NODE_ENV=production"
+
+ExecStart=/usr/bin/node /var/www/numail/.output/server/index.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
