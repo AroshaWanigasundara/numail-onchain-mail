@@ -23,6 +23,14 @@ import {
   seedDemoData,
   type LedgerState,
 } from "./ledger";
+import {
+  encodeAttachments,
+  encodePolicy,
+  hasCall,
+  mailIdFromEvents,
+  submitExtrinsic,
+  type AnyApi,
+} from "./chain";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
