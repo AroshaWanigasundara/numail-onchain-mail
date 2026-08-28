@@ -23,6 +23,14 @@ import {
   seedDemoData,
   type LedgerState,
 } from "./ledger";
+import {
+  encodeAttachments,
+  encodePolicy,
+  hasCall,
+  mailIdFromEvents,
+  submitExtrinsic,
+  type AnyApi,
+} from "./chain";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -106,7 +114,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   const [ledger, setLedger] = useState<LedgerState>(() => loadLedger());
   const [busy, setBusy] = useState<string | null>(null);
 
-  const apiRef = useRef<{ disconnect: () => Promise<void> } | null>(null);
+  const apiRef = useRef<AnyApi>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -333,11 +341,55 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   }, [account, ledger.mailboxes, ledger.delivery, persist]);
 
   // ---- actions -------------------------------------------------------------
+  /** true when we can submit real extrinsics: pallet present + real signer */
+  const onChain =
+    status === "connected" && palletAvailable && Boolean(account) && account?.source !== "demo";
+
   const run = useCallback(
-    async (label: string, fn: (draft: LedgerState) => void, successMsg: string) => {
+    async (
+      label: string,
+      fn: (draft: LedgerState) => void,
+      successMsg: string,
+      txArgs?: () => unknown[],
+    ) => {
       if (!account) throw new Error("Connect a wallet first");
+      const api = apiRef.current;
+      const live =
+        status === "connected" &&
+        account.source !== "demo" &&
+        Boolean(txArgs) &&
+        hasCall(api, label);
+
       setBusy(label);
       try {
+        if (live) {
+          // ---- real chain submission ----
+          let result;
+          try {
+            result = await submitExtrinsic(api, account.address, account.source, label, txArgs!());
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            const code = msg.split(".").pop() ?? msg;
+            toast.error("Extrinsic failed", { description: humanError(code) || msg });
+            throw new Error(msg);
+          }
+          // mirror into the local read-model so the UI updates immediately
+          persist((draft) => {
+            try {
+              fn(draft);
+            } catch {
+              /* chain is the source of truth; local mirror is best-effort */
+            }
+          });
+          lastResultRef.current = result;
+          toast.success(successMsg, {
+            description: `In block ${result.blockHash?.slice(0, 10)}… · tx ${result.txHash.slice(0, 10)}…`,
+          });
+          return result;
+        }
+
+        // ---- local simulation ----
+        lastResultRef.current = null;
         await new Promise((r) => setTimeout(r, 600)); // block inclusion latency
         let failure: string | null = null;
         persist((draft) => {
@@ -352,12 +404,17 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           toast.error("Extrinsic failed", { description: failure });
           throw new Error(failure);
         }
-        toast.success(successMsg);
+        toast.success(successMsg, {
+          description: palletAvailable
+            ? "Simulated locally — connect a real wallet account to submit on chain."
+            : "Simulated locally — pallet-numail was not found on this node.",
+        });
+        return null;
       } finally {
         setBusy(null);
       }
     },
-    [account, persist],
+    [account, persist, status, palletAvailable],
   );
 
   const actions = useMemo<NumailContextValue["actions"]>(
@@ -367,29 +424,62 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           "create_mailbox",
           (d) => ledgerOps.createMailbox(d, account!.address, policy, retention, folders),
           "Mailbox created",
-        ),
+          () => [encodePolicy(policy), retention ?? null, folders],
+        ).then(() => undefined),
       setPolicy: (policy, retention) =>
-        run("set_mailbox_policy", (d) => ledgerOps.setPolicy(d, account!.address, policy, retention), "Policy updated"),
-      addFolder: (name) => run("add_folder", (d) => ledgerOps.addFolder(d, account!.address, name), `Folder "${name}" added`),
+        run(
+          "set_mailbox_policy",
+          (d) => ledgerOps.setPolicy(d, account!.address, policy, retention),
+          "Policy updated",
+          () => [encodePolicy(policy), retention ?? null],
+        ).then(() => undefined),
+      addFolder: (name) =>
+        run("add_folder", (d) => ledgerOps.addFolder(d, account!.address, name), `Folder "${name}" added`, () => [
+          name,
+        ]).then(() => undefined),
       sendMail: async (input) => {
         let id: string | null = null;
-        await run(
+        const result = await run(
           "send_mail",
           (d) => {
             id = ledgerOps.sendMail(d, account!.address, input).mailId;
           },
           "Mail sent",
+          () => [
+            input.recipients,
+            shortHash(input.subject),
+            shortHash(input.body),
+            encodeAttachments(input.attachments),
+            input.threadParent ?? null,
+            input.postage ?? 0,
+          ],
         );
+        if (result) return mailIdFromEvents(result) ?? id;
         return id;
       },
-      markRead: (mailId) => run("mark_read", (d) => ledgerOps.markRead(d, account!.address, mailId), "Marked as read"),
+      markRead: (mailId) =>
+        run("mark_read", (d) => ledgerOps.markRead(d, account!.address, mailId), "Marked as read", () => [
+          mailId,
+        ]).then(() => undefined),
       moveToFolder: (mailId, folder) =>
-        run("move_to_folder", (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder), `Moved to ${folder}`),
-      tombstone: (mailId) => run("tombstone", (d) => ledgerOps.tombstone(d, account!.address, mailId), "Mail tombstoned"),
+        run(
+          "move_to_folder",
+          (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
+          `Moved to ${folder}`,
+          () => [mailId, folder],
+        ).then(() => undefined),
+      tombstone: (mailId) =>
+        run("tombstone", (d) => ledgerOps.tombstone(d, account!.address, mailId), "Mail tombstoned", () => [
+          mailId,
+        ]).then(() => undefined),
       blockSender: (address) =>
-        run("block_sender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked"),
+        run("block_sender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
+          address,
+        ]).then(() => undefined),
       unblockSender: (address) =>
-        run("unblock_sender", (d) => ledgerOps.unblockSender(d, account!.address, address), "Sender unblocked"),
+        run("unblock_sender", (d) => ledgerOps.unblockSender(d, account!.address, address), "Sender unblocked", () => [
+          address,
+        ]).then(() => undefined),
       resetChainData: () => {
         window.localStorage.removeItem("numail_local_ledger_v1");
         setLedger(loadLedger());
