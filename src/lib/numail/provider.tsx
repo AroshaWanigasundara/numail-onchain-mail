@@ -106,7 +106,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   const [ledger, setLedger] = useState<LedgerState>(() => loadLedger());
   const [busy, setBusy] = useState<string | null>(null);
 
-  const apiRef = useRef<{ disconnect: () => Promise<void> } | null>(null);
+  const apiRef = useRef<AnyApi>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
