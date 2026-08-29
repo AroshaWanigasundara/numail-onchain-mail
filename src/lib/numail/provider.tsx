@@ -21,6 +21,7 @@ import {
   loadLedger,
   saveLedger,
   seedDemoData,
+  shortHash,
   type LedgerState,
 } from "./ledger";
 import {
@@ -381,7 +382,6 @@ export function NumailProvider({ children }: { children: ReactNode }) {
               /* chain is the source of truth; local mirror is best-effort */
             }
           });
-          lastResultRef.current = result;
           toast.success(successMsg, {
             description: `In block ${result.blockHash?.slice(0, 10)}… · tx ${result.txHash.slice(0, 10)}…`,
           });
@@ -389,7 +389,6 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         }
 
         // ---- local simulation ----
-        lastResultRef.current = null;
         await new Promise((r) => setTimeout(r, 600)); // block inclusion latency
         let failure: string | null = null;
         persist((draft) => {
