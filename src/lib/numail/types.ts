@@ -94,11 +94,20 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
     description: "Use when running a Substrate node locally. Only works on http:// or localhost pages.",
   },
   {
+    id: "dev-node",
+    name: "My Node (Development)",
+    url: "ws://62.169.26.99:9946",
+    secure: false,
+    description:
+      "Your development node over plain ws://. Works when the app is served over http:// (or localhost) — browsers block ws:// from https:// pages.",
+  },
+  {
     id: "production",
     name: "Production Node (Secure)",
     url: "wss://62.169.26.99:9946",
     secure: true,
-    description: "Deployed NuMail node. Requires your node admin to have enabled TLS (wss://).",
+    description:
+      "Same node over TLS. Once you put the node behind your domain with a wss:// proxy, replace this URL with wss://your-domain.",
   },
   {
     id: "rococo",

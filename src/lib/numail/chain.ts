@@ -64,20 +64,29 @@ export async function submitExtrinsic(
   source: string,
   method: string,
   args: unknown[],
+  /** when set, sign with the in-browser dev keypair (//Alice etc.) instead of an extension */
+  devName?: string,
 ): Promise<SubmitResult> {
   if (!hasCall(api, method)) {
     throw new Error(`This node does not expose numail.${method}`);
   }
-  const { web3FromSource } = await import("@polkadot/extension-dapp");
-  const injector = await web3FromSource(source);
   const tx = api.tx.numail[method](...args);
+
+  // Dev accounts (//Alice, //Bob, …) sign directly with a keypair — no extension.
+  let pair: import("@polkadot/keyring/types").KeyringPair | null = null;
+  let extensionSigner: unknown = null;
+  if (source === "dev" && devName) {
+    const { devPair } = await import("./devAccounts");
+    pair = await devPair(devName);
+  } else {
+    const { web3FromSource } = await import("@polkadot/extension-dapp");
+    const injector = await web3FromSource(source);
+    extensionSigner = injector.signer;
+  }
 
   return await new Promise<SubmitResult>((resolve, reject) => {
     let unsub: (() => void) | undefined;
-    tx.signAndSend(
-      address,
-      { signer: injector.signer },
-      (result: AnyApi) => {
+    const onStatus = (result: AnyApi) => {
         const { status, dispatchError, events, txHash } = result;
         if (dispatchError) {
           unsub?.();
@@ -95,8 +104,11 @@ export async function submitExtrinsic(
           unsub?.();
           resolve({ txHash: txHash.toString(), blockHash, events: numailEvents });
         }
-      },
-    )
+    };
+    const sendPromise: Promise<() => void> = pair
+      ? tx.signAndSend(pair, onStatus)
+      : tx.signAndSend(address, { signer: extensionSigner }, onStatus);
+    sendPromise
       .then((u: () => void) => {
         unsub = u;
       })

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNumail } from "@/lib/numail/provider";
+import { DEV_ACCOUNT_NAMES } from "@/lib/numail/devAccounts";
 import { ComposeDialog } from "./ComposeDialog";
 import { CreateMailboxCard } from "./CreateMailboxCard";
 import { NetworkSettings } from "./NetworkSettings";
@@ -148,7 +149,7 @@ function SidebarBody({
 }
 
 function ConnectWalletScreen() {
-  const { connectWallet, useDemoAccount, walletError } = useNumail();
+  const { connectWallet, useDemoAccount, useDevAccount, walletError } = useNumail();
   return (
     <div className="mx-auto w-full max-w-md surface-panel p-8 text-center">
       <div className="brand-gradient mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
@@ -169,6 +170,27 @@ function ConnectWalletScreen() {
       <p className="mt-3 text-xs text-muted-foreground">
         The demo account signs locally so you can explore every screen without an extension.
       </p>
+
+      <div className="mt-6 border-t border-border pt-4 text-left">
+        <p className="text-xs font-medium">Development accounts</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          Well-known Substrate dev keys (//Alice, //Bob, …). They sign real extrinsics on your dev node — never use
+          on a live network.
+        </p>
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          {DEV_ACCOUNT_NAMES.map((name) => (
+            <Button
+              key={name}
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => void useDevAccount(name)}
+            >
+              {name}
+            </Button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
