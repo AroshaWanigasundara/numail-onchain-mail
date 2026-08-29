@@ -21,7 +21,7 @@ const label: Record<string, string> = {
 };
 
 export function ConnectionBadge() {
-  const { status, endpoint, connError, chainName, lastConnectedAt, reconnect, palletAvailable } = useNumail();
+  const { status, endpoint, connError, chainName, lastConnectedAt, reconnect, palletAvailable, onChain } = useNumail();
 
   return (
     <Popover>
@@ -55,6 +55,10 @@ export function ConnectionBadge() {
           <div className="flex justify-between gap-2">
             <dt>pallet-numail</dt>
             <dd className="text-right">{palletAvailable ? "available" : "simulated locally"}</dd>
+          </div>
+          <div className="flex justify-between gap-2">
+            <dt>Write mode</dt>
+            <dd className="text-right">{onChain ? "signed extrinsics" : "local simulation"}</dd>
           </div>
           <div className="flex justify-between gap-2">
             <dt>Last connected</dt>

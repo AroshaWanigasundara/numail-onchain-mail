@@ -21,6 +21,7 @@ import {
   loadLedger,
   saveLedger,
   seedDemoData,
+  shortHash,
   type LedgerState,
 } from "./ledger";
 import {
@@ -48,6 +49,8 @@ interface NumailContextValue {
   chainName: string | null;
   lastConnectedAt: number | null;
   palletAvailable: boolean;
+  /** true when actions submit real extrinsics instead of the local simulation */
+  onChain: boolean;
   setEndpoint: (url: string) => void;
   reconnect: () => void;
   testEndpoint: (url: string) => Promise<{ ok: boolean; message: string }>;
@@ -334,6 +337,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   // seed demo mail once an account exists and a mailbox is created
   useEffect(() => {
     if (!account) return;
+    if (account.source !== "demo") return; // never fabricate mail for a real signer
     if (!ledger.mailboxes[account.address]) return;
     const hasMail = ledger.delivery.some((d) => d.account === account.address);
     if (hasMail) return;
@@ -381,7 +385,6 @@ export function NumailProvider({ children }: { children: ReactNode }) {
               /* chain is the source of truth; local mirror is best-effort */
             }
           });
-          lastResultRef.current = result;
           toast.success(successMsg, {
             description: `In block ${result.blockHash?.slice(0, 10)}… · tx ${result.txHash.slice(0, 10)}…`,
           });
@@ -389,7 +392,6 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         }
 
         // ---- local simulation ----
-        lastResultRef.current = null;
         await new Promise((r) => setTimeout(r, 600)); // block inclusion latency
         let failure: string | null = null;
         persist((draft) => {
@@ -496,6 +498,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     chainName,
     lastConnectedAt,
     palletAvailable,
+    onChain,
     setEndpoint,
     reconnect,
     testEndpoint,
