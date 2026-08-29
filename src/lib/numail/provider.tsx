@@ -337,6 +337,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   // seed demo mail once an account exists and a mailbox is created
   useEffect(() => {
     if (!account) return;
+    if (account.source !== "demo") return; // never fabricate mail for a real signer
     if (!ledger.mailboxes[account.address]) return;
     const hasMail = ledger.delivery.some((d) => d.account === account.address);
     if (hasMail) return;
