@@ -49,6 +49,8 @@ interface NumailContextValue {
   chainName: string | null;
   lastConnectedAt: number | null;
   palletAvailable: boolean;
+  /** true when actions submit real extrinsics instead of the local simulation */
+  onChain: boolean;
   setEndpoint: (url: string) => void;
   reconnect: () => void;
   testEndpoint: (url: string) => Promise<{ ok: boolean; message: string }>;
@@ -495,6 +497,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     chainName,
     lastConnectedAt,
     palletAvailable,
+    onChain,
     setEndpoint,
     reconnect,
     testEndpoint,
