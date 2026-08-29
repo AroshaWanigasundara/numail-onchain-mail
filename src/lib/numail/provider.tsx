@@ -32,6 +32,7 @@ import {
   submitExtrinsic,
   type AnyApi,
 } from "./chain";
+import { devAccount, type DevAccountName } from "./devAccounts";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -39,6 +40,8 @@ export interface WalletAccount {
   address: string;
   name: string;
   source: string;
+  /** set for Substrate dev keyring accounts (//Alice etc.) — enables keypair signing */
+  devName?: string | undefined;
 }
 
 interface NumailContextValue {
@@ -61,6 +64,7 @@ interface NumailContextValue {
   walletError: string | null;
   connectWallet: () => Promise<void>;
   useDemoAccount: () => void;
+  useDevAccount: (name: DevAccountName) => Promise<void>;
   selectAccount: (address: string) => void;
   disconnectWallet: () => void;
   balance: string | null;
@@ -281,7 +285,28 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const useDevAccount = useCallback(async (name: DevAccountName) => {
+    setWalletError(null);
+    try {
+      const acc = await devAccount(name);
+      setAccounts((prev) => {
+        const rest = prev.filter((a) => a.address !== acc.address);
+        return [...rest, acc];
+      });
+      setAccount(acc);
+      window.localStorage.setItem("numail_account", JSON.stringify(acc));
+      toast.success(`Using dev account ${name}`, {
+        description: "Signs with the well-known //" + name + " key — real extrinsics on your dev node.",
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setWalletError(msg);
+      toast.error("Could not load dev account", { description: msg });
+    }
+  }, []);
+
   const useDemoAccount = useCallback(() => {
+
     setAccounts([DEMO_ACCOUNT]);
     setAccount(DEMO_ACCOUNT);
     window.localStorage.setItem("numail_account", JSON.stringify(DEMO_ACCOUNT));
@@ -370,7 +395,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           // ---- real chain submission ----
           let result;
           try {
-            result = await submitExtrinsic(api, account.address, account.source, label, txArgs!());
+            result = await submitExtrinsic(api, account.address, account.source, label, txArgs!(), account.devName);
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             const code = msg.split(".").pop() ?? msg;
@@ -507,6 +532,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     walletError,
     connectWallet,
     useDemoAccount,
+    useDevAccount,
     selectAccount,
     disconnectWallet,
     balance,
