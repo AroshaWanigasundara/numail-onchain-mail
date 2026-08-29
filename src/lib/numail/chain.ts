@@ -104,8 +104,12 @@ export async function submitExtrinsic(
           unsub?.();
           resolve({ txHash: txHash.toString(), blockHash, events: numailEvents });
         }
-      },
-    )
+      }
+    };
+    const sendPromise: Promise<() => void> = pair
+      ? tx.signAndSend(pair, onStatus)
+      : tx.signAndSend(address, { signer: extensionSigner }, onStatus);
+    sendPromise
       .then((u: () => void) => {
         unsub = u;
       })
