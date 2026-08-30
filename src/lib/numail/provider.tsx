@@ -21,7 +21,6 @@ import {
   loadLedger,
   saveLedger,
   seedDemoData,
-  shortHash,
   type LedgerState,
 } from "./ledger";
 import {
