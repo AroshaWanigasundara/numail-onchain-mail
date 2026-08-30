@@ -25,9 +25,11 @@ import {
   type LedgerState,
 } from "./ledger";
 import {
+  contentHash,
   encodeAttachments,
   encodePolicy,
   hasCall,
+  hasPallet,
   mailIdFromEvents,
   submitExtrinsic,
   type AnyApi,
@@ -172,7 +174,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         apiRef.current = api;
         const chain = await api.rpc.system.chain();
         setChainName(chain.toString());
-        setPalletAvailable(Boolean((api.tx as Record<string, unknown>)["numail"]));
+        setPalletAvailable(hasPallet(api));
         setStatus("connected");
         setLastConnectedAt(Date.now());
         retryRef.current = 0;
@@ -244,7 +246,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       await provider.connect();
       const api = await ApiPromise.create({ provider: provider as never, throwOnConnect: true, noInitWarn: true });
       const chain = await api.rpc.system.chain();
-      const hasPallet = Boolean((api.tx as Record<string, unknown>)["numail"]);
+      const hasPalletDetected = hasPallet(api);
       await api.disconnect();
       return {
         ok: true,

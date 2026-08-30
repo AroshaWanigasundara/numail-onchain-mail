@@ -52,9 +52,20 @@ export function encodePolicy(policy: MailboxPolicy): Record<string, unknown> {
   }
 }
 
+/**
+ * Deterministic 32-byte content hash for H256 args (subject_hash, body_ref,
+ * attachment hashes). The ledger's shortHash is only 8 bytes, which the
+ * runtime rejects — expand it to a full H256 here.
+ */
+export function contentHash(input: string): string {
+  let out = "";
+  for (let i = 0; out.length < 64; i++) out += shortHash(`${i}:${input}`).slice(2);
+  return `0x${out.slice(0, 64)}`;
+}
+
 /** The pallet takes `Vec<H256>` attachment hashes — hash each attachment ref. */
 export function encodeAttachments(attachments: Attachment[]): string[] {
-  return attachments.map((a) => shortHash(a.cid || a.name));
+  return attachments.map((a) => contentHash(a.cid || a.name));
 }
 
 /** true when this node actually carries the pallet */
