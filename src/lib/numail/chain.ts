@@ -1,13 +1,28 @@
 /**
  * Real on-chain submission path for pallet-numail.
  *
- * When the connected node exposes `api.tx.numail` AND the user signs with a
- * real (non-demo) injected account, every action is submitted as a genuine
- * extrinsic. The local ledger is then updated as a read-model / cache so the
- * UI keeps rendering instantly. If either condition is missing we stay on the
- * local simulation.
+ * The runtime pallet is registered as `NuMail` (pallet index 8), which
+ * polkadot-js exposes camelCased as `api.tx.nuMail` / `api.events.nuMail`.
+ * Calls (from the v15 metadata of the dev chain):
+ *
+ *   createMailbox(policy: AcceptancePolicy, retentionBlocks: Option<u32>, folders: Vec<Bytes>)
+ *   sendMail(recipients: Vec<AccountId32>, subjectHash: H256, bodyRef: H256,
+ *            attachments: Vec<H256>, threadParent: Option<u64>)
+ *   markRead(mailId: u64)
+ *   tombstone(mailId: u64)
+ *   moveToFolder(mailId: u64, folder: Bytes)
+ *   setMailboxPolicy(policy: AcceptancePolicy, retentionBlocks: Option<u32>)
+ *   blockSender(blocked: AccountId32)
+ *   unblockSender(unblocked: AccountId32)
+ *
+ * AcceptancePolicy = Open | ContactsOnly | MinTrustScore(u32) | PostageRequired(Balance)
+ *
+ * When the connected node exposes the pallet AND the user signs with a real
+ * (non-demo) account, every action is submitted as a genuine extrinsic and the
+ * local ledger is mirrored as a read-model. Otherwise we stay on simulation.
  */
 import type { Attachment, MailboxPolicy } from "./types";
+import { shortHash } from "./ledger";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type AnyApi = any;
@@ -15,8 +30,13 @@ export type AnyApi = any;
 export interface SubmitResult {
   txHash: string;
   blockHash: string | null;
-  /** decoded `numail.*` events emitted by this extrinsic */
+  /** decoded `nuMail.*` events emitted by this extrinsic */
   events: { method: string; data: string[] }[];
+}
+
+/** The pallet tx section, tolerating older `numail` naming. */
+function palletTx(api: AnyApi): AnyApi {
+  return api?.tx?.nuMail ?? api?.tx?.numail ?? null;
 }
 
 export function encodePolicy(policy: MailboxPolicy): Record<string, unknown> {
@@ -32,13 +52,19 @@ export function encodePolicy(policy: MailboxPolicy): Record<string, unknown> {
   }
 }
 
-export function encodeAttachments(attachments: Attachment[]) {
-  return attachments.map((a) => ({ cid: a.cid, size: a.size, name: a.name }));
+/** The pallet takes `Vec<H256>` attachment hashes — hash each attachment ref. */
+export function encodeAttachments(attachments: Attachment[]): string[] {
+  return attachments.map((a) => shortHash(a.cid || a.name));
 }
 
 /** true when this node actually carries the pallet */
+export function hasPallet(api: AnyApi): boolean {
+  return Boolean(palletTx(api));
+}
+
+/** true when this node actually exposes `nuMail.<method>` */
 export function hasCall(api: AnyApi, method: string): boolean {
-  return Boolean(api?.tx?.numail?.[method]);
+  return Boolean(palletTx(api)?.[method]);
 }
 
 /** Extracts a human error out of a DispatchError. */
@@ -55,7 +81,7 @@ function decodeDispatchError(api: AnyApi, dispatchError: AnyApi): string {
 }
 
 /**
- * Signs and submits `numail.<method>(...args)` with the injected signer for
+ * Signs and submits `nuMail.<method>(...args)` with the injected signer for
  * `address`, resolving once the extrinsic is in a block.
  */
 export async function submitExtrinsic(
@@ -68,9 +94,9 @@ export async function submitExtrinsic(
   devName?: string,
 ): Promise<SubmitResult> {
   if (!hasCall(api, method)) {
-    throw new Error(`This node does not expose numail.${method}`);
+    throw new Error(`This node does not expose nuMail.${method}`);
   }
-  const tx = api.tx.numail[method](...args);
+  const tx = palletTx(api)[method](...args);
 
   // Dev accounts (//Alice, //Bob, …) sign directly with a keypair — no extension.
   let pair: import("@polkadot/keyring/types").KeyringPair | null = null;
@@ -96,7 +122,7 @@ export async function submitExtrinsic(
         if (status?.isInBlock || status?.isFinalized) {
           const blockHash = (status.isInBlock ? status.asInBlock : status.asFinalized).toString();
           const numailEvents = (events ?? [])
-            .filter((e: AnyApi) => e.event?.section === "numail")
+            .filter((e: AnyApi) => /^numail$/i.test(String(e.event?.section)))
             .map((e: AnyApi) => ({
               method: String(e.event.method),
               data: e.event.data.map((d: AnyApi) => d.toString()),
@@ -116,8 +142,12 @@ export async function submitExtrinsic(
   });
 }
 
-/** Pulls a mail id out of the emitted MailSent event if present. */
+/**
+ * Pulls the mail id out of the emitted `MailSent(mail_id, sender, count)`
+ * event. MailId is a u64 on this runtime, so it is the first numeric field.
+ */
 export function mailIdFromEvents(result: SubmitResult): string | null {
-  const sent = result.events.find((e) => /MailSent|MailQueued|MailDelivered/i.test(e.method));
-  return sent?.data.find((d) => d.startsWith("0x")) ?? null;
+  const sent = result.events.find((e) => /MailSent/i.test(e.method));
+  const id = sent?.data[0];
+  return id ?? null;
 }
