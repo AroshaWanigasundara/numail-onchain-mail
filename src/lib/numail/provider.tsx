@@ -250,7 +250,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       await api.disconnect();
       return {
         ok: true,
-        message: `Connected to ${chain.toString()}${hasPallet ? " — pallet-numail detected" : " — pallet-numail not found on this node"}`,
+        message: `Connected to ${chain.toString()}${hasPalletDetected ? " — pallet-nuMail detected" : " — pallet-nuMail not found on this node"}`,
       };
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
