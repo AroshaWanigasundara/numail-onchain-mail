@@ -21,13 +21,14 @@ import {
   loadLedger,
   saveLedger,
   seedDemoData,
-  shortHash,
   type LedgerState,
 } from "./ledger";
 import {
+  contentHash,
   encodeAttachments,
   encodePolicy,
   hasCall,
+  hasPallet,
   mailIdFromEvents,
   submitExtrinsic,
   type AnyApi,
@@ -172,7 +173,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         apiRef.current = api;
         const chain = await api.rpc.system.chain();
         setChainName(chain.toString());
-        setPalletAvailable(Boolean((api.tx as Record<string, unknown>)["numail"]));
+        setPalletAvailable(hasPallet(api));
         setStatus("connected");
         setLastConnectedAt(Date.now());
         retryRef.current = 0;
@@ -244,11 +245,11 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       await provider.connect();
       const api = await ApiPromise.create({ provider: provider as never, throwOnConnect: true, noInitWarn: true });
       const chain = await api.rpc.system.chain();
-      const hasPallet = Boolean((api.tx as Record<string, unknown>)["numail"]);
+      const hasPalletDetected = hasPallet(api);
       await api.disconnect();
       return {
         ok: true,
-        message: `Connected to ${chain.toString()}${hasPallet ? " — pallet-numail detected" : " — pallet-numail not found on this node"}`,
+        message: `Connected to ${chain.toString()}${hasPalletDetected ? " — pallet-nuMail detected" : " — pallet-nuMail not found on this node"}`,
       };
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
@@ -448,63 +449,71 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     () => ({
       createMailbox: (policy, retention, folders) =>
         run(
-          "create_mailbox",
+          "createMailbox",
           (d) => ledgerOps.createMailbox(d, account!.address, policy, retention, folders),
           "Mailbox created",
           () => [encodePolicy(policy), retention ?? null, folders],
         ).then(() => undefined),
       setPolicy: (policy, retention) =>
         run(
-          "set_mailbox_policy",
+          "setMailboxPolicy",
           (d) => ledgerOps.setPolicy(d, account!.address, policy, retention),
           "Policy updated",
           () => [encodePolicy(policy), retention ?? null],
         ).then(() => undefined),
+      // The pallet has no add_folder call — folders are fixed at mailbox
+      // creation — so this stays a local-only convenience (no txArgs → simulate).
       addFolder: (name) =>
-        run("add_folder", (d) => ledgerOps.addFolder(d, account!.address, name), `Folder "${name}" added`, () => [
-          name,
-        ]).then(() => undefined),
+        run("addFolder", (d) => ledgerOps.addFolder(d, account!.address, name), `Folder "${name}" added`).then(
+          () => undefined,
+        ),
       sendMail: async (input) => {
         let id: string | null = null;
         const result = await run(
-          "send_mail",
+          "sendMail",
           (d) => {
             id = ledgerOps.sendMail(d, account!.address, input).mailId;
           },
           "Mail sent",
           () => [
             input.recipients,
-            shortHash(input.subject),
-            shortHash(input.body),
+            contentHash(input.subject),
+            contentHash(input.body),
             encodeAttachments(input.attachments),
-            input.threadParent ?? null,
-            input.postage ?? 0,
+            input.threadParent && /^\d+$/.test(input.threadParent) ? Number(input.threadParent) : null,
           ],
         );
-        if (result) return mailIdFromEvents(result) ?? id;
+        if (result) {
+          const chainId = mailIdFromEvents(result);
+          // re-key the local mirror to the id the chain actually assigned
+          if (chainId && id && chainId !== id) {
+            persist((d) => ledgerOps.renameMailId(d, id!, chainId));
+          }
+          return chainId ?? id;
+        }
         return id;
       },
       markRead: (mailId) =>
-        run("mark_read", (d) => ledgerOps.markRead(d, account!.address, mailId), "Marked as read", () => [
-          mailId,
+        run("markRead", (d) => ledgerOps.markRead(d, account!.address, mailId), "Marked as read", () => [
+          Number(mailId),
         ]).then(() => undefined),
       moveToFolder: (mailId, folder) =>
         run(
-          "move_to_folder",
+          "moveToFolder",
           (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
           `Moved to ${folder}`,
-          () => [mailId, folder],
+          () => [Number(mailId), folder],
         ).then(() => undefined),
       tombstone: (mailId) =>
         run("tombstone", (d) => ledgerOps.tombstone(d, account!.address, mailId), "Mail tombstoned", () => [
-          mailId,
+          Number(mailId),
         ]).then(() => undefined),
       blockSender: (address) =>
-        run("block_sender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
+        run("blockSender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
           address,
         ]).then(() => undefined),
       unblockSender: (address) =>
-        run("unblock_sender", (d) => ledgerOps.unblockSender(d, account!.address, address), "Sender unblocked", () => [
+        run("unblockSender", (d) => ledgerOps.unblockSender(d, account!.address, address), "Sender unblocked", () => [
           address,
         ]).then(() => undefined),
       resetChainData: () => {
