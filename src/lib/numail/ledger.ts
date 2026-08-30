@@ -1,8 +1,8 @@
 /**
  * Local NuMail ledger.
  *
- * The NuMail pallet (Module 13) is not deployed on every node an operator may
- * point this client at. When `api.tx.numail` is unavailable we fall back to a
+ * The NuMail pallet is not deployed on every node an operator may
+ * point this client at. When `api.tx.nuMail` is unavailable we fall back to a
  * deterministic local ledger so the whole UI (folders, delivery state,
  * blocklists, threads) remains exercisable. Every mutation mirrors the shape of
  * the real extrinsic so swapping in the pallet is a one-line change per action.
@@ -22,6 +22,8 @@ const KEY = "numail_local_ledger_v1";
 
 export interface LedgerState {
   block: number;
+  /** next local mail id — numeric so ids are compatible with the pallet's u64 MailId */
+  nextMailId: number;
   mailboxes: Record<string, Mailbox>;
   mail: Record<string, MailEnvelope>;
   delivery: DeliveryState[];
@@ -33,6 +35,7 @@ export interface LedgerState {
 
 const empty = (): LedgerState => ({
   block: 1_284_000,
+  nextMailId: 1,
   mailboxes: {},
   mail: {},
   delivery: [],
@@ -165,7 +168,8 @@ export const ledgerOps = {
     }
 
     state.block += 1;
-    const mailId = `0x${Math.random().toString(16).slice(2, 10)}${Date.now().toString(16)}`;
+    const mailId = String(state.nextMailId);
+    state.nextMailId += 1;
     const envelope: MailEnvelope = {
       mailId,
       sender,
@@ -230,6 +234,19 @@ export const ledgerOps = {
     state.blocklists[owner] = (state.blocklists[owner] ?? []).filter((a) => a !== target);
     state.block += 1;
     pushEvent(state, { type: "SenderUnblocked", account: target, detail: `${target} unblocked` });
+  },
+
+  /** Re-keys a locally mirrored mail to the id the chain actually assigned. */
+  renameMailId(state: LedgerState, oldId: string, newId: string) {
+    if (oldId === newId || !state.mail[oldId]) return;
+    state.mail[newId] = { ...state.mail[oldId]!, mailId: newId };
+    delete state.mail[oldId];
+    if (state.payloads[oldId]) {
+      state.payloads[newId] = state.payloads[oldId]!;
+      delete state.payloads[oldId];
+    }
+    for (const d of state.delivery) if (d.mailId === oldId) d.mailId = newId;
+    for (const e of state.events) if (e.mailId === oldId) e.mailId = newId;
   },
 };
 
