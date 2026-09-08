@@ -381,7 +381,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       const found = accounts.find((a) => a.address === address);
       if (found) {
         setAccount(found);
-        void syncMailboxFromChain(address);
+        if (found.source !== "demo") void syncMailboxFromChain(address);
       }
     },
     [accounts, syncMailboxFromChain],
