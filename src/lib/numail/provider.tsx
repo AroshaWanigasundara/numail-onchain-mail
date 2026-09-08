@@ -252,6 +252,68 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---- wallet --------------------------------------------------------------
+
+  /**
+   * Looks the connected address up in `nuMail.mailboxes` on chain and mirrors
+   * the result into the local read-model, so a wallet that already owns a
+   * mailbox lands straight in the mailbox instead of the create screen.
+   */
+  const syncMailboxFromChain = useCallback(
+    async (address: string) => {
+      const api = apiRef.current as AnyApi;
+      const q = api?.query?.nuMail ?? api?.query?.numail;
+      if (!q?.mailboxes) return false;
+      try {
+        const raw = await q.mailboxes(address);
+        const some = typeof raw?.isSome === "boolean" ? raw.isSome : !raw?.isEmpty;
+        if (!some) {
+          // chain is the source of truth for real signers
+          persist((draft) => {
+            delete draft.mailboxes[address];
+          });
+          return false;
+        }
+        const value = raw.unwrapOr ? raw.unwrapOr(raw) : raw;
+        const j = (value?.toJSON?.() ?? {}) as Record<string, unknown>;
+        const hexToStr = (v: unknown) => {
+          const s = String(v);
+          if (!s.startsWith("0x")) return s;
+          let out = "";
+          for (let i = 2; i < s.length; i += 2) out += String.fromCharCode(parseInt(s.slice(i, i + 2), 16));
+          return out;
+        };
+        const folders = Array.isArray(j["folders"]) ? (j["folders"] as unknown[]).map(hexToStr) : [];
+        const rawPolicy = j["policy"];
+        let policy: MailboxPolicy = { kind: "Open" };
+        if (typeof rawPolicy === "string") {
+          policy = { kind: /contacts/i.test(rawPolicy) ? "ContactsOnly" : "Open" };
+        } else if (rawPolicy && typeof rawPolicy === "object") {
+          const [k, v] = Object.entries(rawPolicy as Record<string, unknown>)[0] ?? [];
+          if (k && /minTrust/i.test(k)) policy = { kind: "MinTrustScore", minTrustScore: Number(v) || 0 };
+          else if (k && /postage/i.test(k)) policy = { kind: "PostageRequired", postage: Number(v) || 0 };
+          else if (k && /contacts/i.test(k)) policy = { kind: "ContactsOnly" };
+        }
+        const retentionRaw = j["retentionBlocks"] ?? j["retention_blocks"];
+        persist((draft) => {
+          const existing = draft.mailboxes[address];
+          draft.mailboxes[address] = {
+            owner: address,
+            policy,
+            retention: retentionRaw == null ? undefined : Number(retentionRaw),
+            folders: folders.length ? folders : (existing?.folders ?? ["inbox", "sent", "archive"]),
+            createdAtBlock: existing?.createdAtBlock ?? draft.block,
+            createdAt: existing?.createdAt ?? Date.now(),
+          };
+          draft.blocklists[address] ??= [];
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [persist],
+  );
+
   const connectWallet = useCallback(async () => {
     setWalletError(null);
     try {
@@ -272,40 +334,43 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       setAccounts(list);
       const first = list[0]!;
       setAccount(first);
-      window.localStorage.setItem("numail_account", JSON.stringify(first));
       toast.success("Wallet connected", { description: first.name });
+      const found = await syncMailboxFromChain(first.address);
+      if (found) toast.info("Existing mailbox found on chain");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setWalletError(msg);
       toast.error("Wallet connection failed", { description: msg });
     }
-  }, []);
+  }, [syncMailboxFromChain]);
 
-  const useDevAccount = useCallback(async (name: DevAccountName) => {
-    setWalletError(null);
-    try {
-      const acc = await devAccount(name);
-      setAccounts((prev) => {
-        const rest = prev.filter((a) => a.address !== acc.address);
-        return [...rest, acc];
-      });
-      setAccount(acc);
-      window.localStorage.setItem("numail_account", JSON.stringify(acc));
-      toast.success(`Using dev account ${name}`, {
-        description: "Signs with the well-known //" + name + " key — real extrinsics on your dev node.",
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setWalletError(msg);
-      toast.error("Could not load dev account", { description: msg });
-    }
-  }, []);
+  const useDevAccount = useCallback(
+    async (name: DevAccountName) => {
+      setWalletError(null);
+      try {
+        const acc = await devAccount(name);
+        setAccounts((prev) => {
+          const rest = prev.filter((a) => a.address !== acc.address);
+          return [...rest, acc];
+        });
+        setAccount(acc);
+        toast.success(`Using dev account ${name}`, {
+          description: "Signs with the well-known //" + name + " key — real extrinsics on your dev node.",
+        });
+        const found = await syncMailboxFromChain(acc.address);
+        if (found) toast.info("Existing mailbox found on chain");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setWalletError(msg);
+        toast.error("Could not load dev account", { description: msg });
+      }
+    },
+    [syncMailboxFromChain],
+  );
 
   const useDemoAccount = useCallback(() => {
-
     setAccounts([DEMO_ACCOUNT]);
     setAccount(DEMO_ACCOUNT);
-    window.localStorage.setItem("numail_account", JSON.stringify(DEMO_ACCOUNT));
     toast.success("Using demo account", {
       description: "Signing is simulated locally so you can explore the full client.",
     });
@@ -316,18 +381,18 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       const found = accounts.find((a) => a.address === address);
       if (found) {
         setAccount(found);
-        window.localStorage.setItem("numail_account", JSON.stringify(found));
+        void syncMailboxFromChain(address);
       }
     },
-    [accounts],
+    [accounts, syncMailboxFromChain],
   );
 
   const disconnectWallet = useCallback(() => {
     setAccount(null);
     setAccounts([]);
     setBalance(null);
-    window.localStorage.removeItem("numail_account");
   }, []);
+
 
   // balance
   useEffect(() => {
