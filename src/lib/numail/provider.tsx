@@ -126,20 +126,15 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   const retryRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // hydrate saved endpoint / account
+  // hydrate saved endpoint only — the wallet session is intentionally NOT
+  // restored, so every browser reload lands back on the connect screen.
   useEffect(() => {
     const saved = window.localStorage.getItem(ENDPOINT_STORAGE_KEY);
     if (saved) setEndpointState(saved);
-    const savedAcc = window.localStorage.getItem("numail_account");
-    if (savedAcc) {
-      try {
-        setAccount(JSON.parse(savedAcc) as WalletAccount);
-      } catch {
-        /* ignore */
-      }
-    }
+    window.localStorage.removeItem("numail_account");
     setLedger(loadLedger());
   }, []);
+
 
   const persist = useCallback((updater: (draft: LedgerState) => void) => {
     setLedger((prev) => {
