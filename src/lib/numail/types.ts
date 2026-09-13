@@ -128,4 +128,7 @@ export const PALLET_ERRORS: Record<string, string> = {
   AttachmentNotAnchored: "One or more attachments are not anchored on DNC (Module 2).",
   FolderFull: "That folder has reached its on-chain capacity.",
   ThreadFull: "This conversation thread reached the maximum depth.",
+  NotRecipient: "Only a recipient of this mail can change its delivery state on chain.",
+  NotAuthorized: "This account is not allowed to perform that action on this mail.",
+  MailNotFound: "That mail no longer exists on chain.",
 };

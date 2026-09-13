@@ -122,6 +122,9 @@ export function NumailProvider({ children }: { children: ReactNode }) {
 
   const [ledger, setLedger] = useState<LedgerState>(() => loadLedger());
   const [busy, setBusy] = useState<string | null>(null);
+  // always-fresh view of the ledger for action guards
+  const ledgerRef = useRef(ledger);
+  ledgerRef.current = ledger;
 
   const apiRef = useRef<AnyApi>(null);
   const retryRef = useRef(0);
@@ -506,6 +509,22 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     [account, persist, status, palletAvailable],
   );
 
+  /**
+   * The pallet only lets a *recipient* mutate delivery state (mark_read,
+   * move_to_folder, tombstone) and only for mail that exists on chain (numeric
+   * u64 id). Sent-folder items and locally simulated mail must stay local,
+   * otherwise the runtime rejects the extrinsic with NotRecipient.
+   */
+  const chainDelivery = useCallback(
+    (mailId: string) => {
+      if (!account || account.source === "demo") return false;
+      if (!/^\d+$/.test(mailId)) return false;
+      const mail = ledgerRef.current.mail[mailId];
+      return Boolean(mail && mail.recipients.includes(account.address));
+    },
+    [account],
+  );
+
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
       createMailbox: (policy, retention, folders) => {
@@ -559,20 +578,26 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         return id;
       },
       markRead: (mailId) =>
-        run("markRead", (d) => ledgerOps.markRead(d, account!.address, mailId), "Marked as read", () => [
-          Number(mailId),
-        ]).then(() => undefined),
+        run(
+          "markRead",
+          (d) => ledgerOps.markRead(d, account!.address, mailId),
+          "Marked as read",
+          chainDelivery(mailId) ? () => [Number(mailId)] : undefined,
+        ).then(() => undefined),
       moveToFolder: (mailId, folder) =>
         run(
           "moveToFolder",
           (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
           `Moved to ${folder}`,
-          () => [Number(mailId), folder],
+          chainDelivery(mailId) ? () => [Number(mailId), folder] : undefined,
         ).then(() => undefined),
       tombstone: (mailId) =>
-        run("tombstone", (d) => ledgerOps.tombstone(d, account!.address, mailId), "Mail tombstoned", () => [
-          Number(mailId),
-        ]).then(() => undefined),
+        run(
+          "tombstone",
+          (d) => ledgerOps.tombstone(d, account!.address, mailId),
+          "Mail tombstoned",
+          chainDelivery(mailId) ? () => [Number(mailId)] : undefined,
+        ).then(() => undefined),
       blockSender: (address) =>
         run("blockSender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
           address,
@@ -587,7 +612,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success("Local NuMail state cleared");
       },
     }),
-    [run, account],
+    [run, account, chainDelivery],
   );
 
   const value: NumailContextValue = {
