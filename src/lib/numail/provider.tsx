@@ -516,13 +516,27 @@ export function NumailProvider({ children }: { children: ReactNode }) {
    * otherwise the runtime rejects the extrinsic with NotRecipient.
    */
   const chainDelivery = useCallback(
-    (mailId: string) => {
-      if (!account || account.source === "demo") return false;
-      if (!/^\d+$/.test(mailId)) return false;
+    async (mailId: string) => {
+      if (!account || account.source === "demo" || !/^\d+$/.test(mailId)) return false;
+
+      // The chain is authoritative here. Local envelopes are only a cache and
+      // can be stale (or share an id with mail created before this browser saw
+      // it), so checking `mail.recipients` can submit with the wrong ownership.
+      const api = apiRef.current as AnyApi;
+      const q = api?.query?.nuMail ?? api?.query?.numail;
+      if (status === "connected" && q?.deliveryState) {
+        try {
+          const delivery = await q.deliveryState(Number(mailId), account.address);
+          return typeof delivery?.isSome === "boolean" ? delivery.isSome : !delivery?.isEmpty;
+        } catch {
+          return false;
+        }
+      }
+
       const mail = ledgerRef.current.mail[mailId];
       return Boolean(mail && mail.recipients.includes(account.address));
     },
-    [account],
+    [account, status],
   );
 
   const actions = useMemo<NumailContextValue["actions"]>(
@@ -577,27 +591,33 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         }
         return id;
       },
-      markRead: (mailId) =>
-        run(
+      markRead: async (mailId) => {
+        const isRecipient = await chainDelivery(mailId);
+        await run(
           "markRead",
           (d) => ledgerOps.markRead(d, account!.address, mailId),
           "Marked as read",
-          chainDelivery(mailId) ? () => [Number(mailId)] : undefined,
-        ).then(() => undefined),
-      moveToFolder: (mailId, folder) =>
-        run(
+          isRecipient ? () => [Number(mailId)] : undefined,
+        );
+      },
+      moveToFolder: async (mailId, folder) => {
+        const isRecipient = await chainDelivery(mailId);
+        await run(
           "moveToFolder",
           (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
           `Moved to ${folder}`,
-          chainDelivery(mailId) ? () => [Number(mailId), folder] : undefined,
-        ).then(() => undefined),
-      tombstone: (mailId) =>
-        run(
+          isRecipient ? () => [Number(mailId), folder] : undefined,
+        );
+      },
+      tombstone: async (mailId) => {
+        const isRecipient = await chainDelivery(mailId);
+        await run(
           "tombstone",
           (d) => ledgerOps.tombstone(d, account!.address, mailId),
           "Mail tombstoned",
-          chainDelivery(mailId) ? () => [Number(mailId)] : undefined,
-        ).then(() => undefined),
+          isRecipient ? () => [Number(mailId)] : undefined,
+        );
+      },
       blockSender: (address) =>
         run("blockSender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
           address,
