@@ -562,20 +562,26 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         return id;
       },
       markRead: (mailId) =>
-        run("markRead", (d) => ledgerOps.markRead(d, account!.address, mailId), "Marked as read", () => [
-          Number(mailId),
-        ]).then(() => undefined),
+        run(
+          "markRead",
+          (d) => ledgerOps.markRead(d, account!.address, mailId),
+          "Marked as read",
+          chainDelivery(mailId) ? () => [Number(mailId)] : undefined,
+        ).then(() => undefined),
       moveToFolder: (mailId, folder) =>
         run(
           "moveToFolder",
           (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
           `Moved to ${folder}`,
-          () => [Number(mailId), folder],
+          chainDelivery(mailId) ? () => [Number(mailId), folder] : undefined,
         ).then(() => undefined),
       tombstone: (mailId) =>
-        run("tombstone", (d) => ledgerOps.tombstone(d, account!.address, mailId), "Mail tombstoned", () => [
-          Number(mailId),
-        ]).then(() => undefined),
+        run(
+          "tombstone",
+          (d) => ledgerOps.tombstone(d, account!.address, mailId),
+          "Mail tombstoned",
+          chainDelivery(mailId) ? () => [Number(mailId)] : undefined,
+        ).then(() => undefined),
       blockSender: (address) =>
         run("blockSender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
           address,
