@@ -10,6 +10,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  DEFAULT_FOLDERS,
   ENDPOINT_STORAGE_KEY,
   PALLET_ERRORS,
   type Attachment,
@@ -507,13 +508,17 @@ export function NumailProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
-      createMailbox: (policy, retention, folders) =>
-        run(
+      createMailbox: (policy, retention, folders) => {
+        // inbox/sent/archive must always be registered on chain, plus any
+        // custom folders the user added in the UI.
+        const allFolders = Array.from(new Set([...DEFAULT_FOLDERS, ...folders]));
+        return run(
           "createMailbox",
           (d) => ledgerOps.createMailbox(d, account!.address, policy, retention, folders),
           "Mailbox created",
-          () => [encodePolicy(policy), retention ?? null, folders],
-        ).then(() => undefined),
+          () => [encodePolicy(policy), retention ?? null, allFolders],
+        ).then(() => undefined);
+      },
       setPolicy: (policy, retention) =>
         run(
           "setMailboxPolicy",
