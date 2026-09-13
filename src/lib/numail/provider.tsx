@@ -10,6 +10,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  DEFAULT_FOLDERS,
   ENDPOINT_STORAGE_KEY,
   PALLET_ERRORS,
   type Attachment,
