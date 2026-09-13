@@ -122,6 +122,9 @@ export function NumailProvider({ children }: { children: ReactNode }) {
 
   const [ledger, setLedger] = useState<LedgerState>(() => loadLedger());
   const [busy, setBusy] = useState<string | null>(null);
+  // always-fresh view of the ledger for action guards
+  const ledgerRef = useRef(ledger);
+  ledgerRef.current = ledger;
 
   const apiRef = useRef<AnyApi>(null);
   const retryRef = useRef(0);
