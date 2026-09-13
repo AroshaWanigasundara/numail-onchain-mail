@@ -509,6 +509,22 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     [account, persist, status, palletAvailable],
   );
 
+  /**
+   * The pallet only lets a *recipient* mutate delivery state (mark_read,
+   * move_to_folder, tombstone) and only for mail that exists on chain (numeric
+   * u64 id). Sent-folder items and locally simulated mail must stay local,
+   * otherwise the runtime rejects the extrinsic with NotRecipient.
+   */
+  const chainDelivery = useCallback(
+    (mailId: string) => {
+      if (!account || account.source === "demo") return false;
+      if (!/^\d+$/.test(mailId)) return false;
+      const mail = ledgerRef.current.mail[mailId];
+      return Boolean(mail && mail.recipients.includes(account.address));
+    },
+    [account],
+  );
+
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
       createMailbox: (policy, retention, folders) => {
