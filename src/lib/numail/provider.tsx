@@ -122,9 +122,6 @@ export function NumailProvider({ children }: { children: ReactNode }) {
 
   const [ledger, setLedger] = useState<LedgerState>(() => loadLedger());
   const [busy, setBusy] = useState<string | null>(null);
-  // always-fresh view of the ledger for action guards
-  const ledgerRef = useRef(ledger);
-  ledgerRef.current = ledger;
 
   const apiRef = useRef<AnyApi>(null);
   const retryRef = useRef(0);
@@ -645,36 +642,44 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
       createMailbox: async (policy, retention, folders) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
         // inbox/sent/archive must always be registered on chain, plus any
         // custom folders the user added in the UI.
         const allFolders = Array.from(new Set([...DEFAULT_FOLDERS, ...folders]));
         await run(
           "createMailbox",
-          (d) => ledgerOps.createMailbox(d, account!.address, policy, retention, folders),
+          (d) => ledgerOps.createMailbox(d, address, policy, retention, folders),
           "Mailbox created",
           () => [encodePolicy(policy), retention ?? null, allFolders],
         );
-        if (account?.source !== "demo") await syncAccountFromChain(account.address);
+        if (account.source !== "demo") await syncAccountFromChain(address);
       },
-      setPolicy: (policy, retention) =>
-        run(
+      setPolicy: async (policy, retention) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        await run(
           "setMailboxPolicy",
-          (d) => ledgerOps.setPolicy(d, account!.address, policy, retention),
+          (d) => ledgerOps.setPolicy(d, address, policy, retention),
           "Policy updated",
           () => [encodePolicy(policy), retention ?? null],
-        ).then(() => undefined),
+        );
+      },
       // The pallet has no add_folder call — folders are fixed at mailbox
       // creation — so this stays a local-only convenience (no txArgs → simulate).
-      addFolder: (name) =>
-        run("addFolder", (d) => ledgerOps.addFolder(d, account!.address, name), `Folder "${name}" added`).then(
-          () => undefined,
-        ),
+      addFolder: async (name) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        await run("addFolder", (d) => ledgerOps.addFolder(d, address, name), `Folder "${name}" added`);
+      },
       sendMail: async (input) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
         let id: string | null = null;
         const result = await run(
           "sendMail",
           (d) => {
-            id = ledgerOps.sendMail(d, account!.address, input).mailId;
+            id = ledgerOps.sendMail(d, address, input).mailId;
           },
           "Mail sent",
           () => [
@@ -691,46 +696,55 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           if (chainId && id && chainId !== id) {
             persist((d) => ledgerOps.renameMailId(d, id!, chainId));
           }
+          if (account.source !== "demo") await syncMailFromChain(address);
           return chainId ?? id;
         }
         return id;
       },
       markRead: async (mailId) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
         await run(
           "markRead",
-          (d) => ledgerOps.markRead(d, account!.address, mailId),
+          (d) => ledgerOps.markRead(d, address, mailId),
           "Marked as read",
           () => [Number(mailId)],
         );
-        if (account?.source !== "demo") await syncMailFromChain(account.address);
+        if (account.source !== "demo") await syncMailFromChain(address);
       },
       moveToFolder: async (mailId, folder) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
         const folderBytes = onChain ? await chainFolderBytes(folder) : folder;
         await run(
           "moveToFolder",
-          (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
+          (d) => ledgerOps.moveToFolder(d, address, mailId, folder),
           `Moved to ${folder}`,
           () => [Number(mailId), folderBytes],
         );
-        if (account?.source !== "demo") await syncMailFromChain(account.address);
+        if (account.source !== "demo") await syncMailFromChain(address);
       },
       tombstone: async (mailId) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
         await run(
           "tombstone",
-          (d) => ledgerOps.tombstone(d, account!.address, mailId),
+          (d) => ledgerOps.tombstone(d, address, mailId),
           "Mail tombstoned",
           () => [Number(mailId)],
         );
-        if (account?.source !== "demo") await syncMailFromChain(account.address);
+        if (account.source !== "demo") await syncMailFromChain(address);
       },
-      blockSender: (address) =>
-        run("blockSender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
-          address,
-        ]).then(() => undefined),
-      unblockSender: (address) =>
-        run("unblockSender", (d) => ledgerOps.unblockSender(d, account!.address, address), "Sender unblocked", () => [
-          address,
-        ]).then(() => undefined),
+      blockSender: async (blocked) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        await run("blockSender", (d) => ledgerOps.blockSender(d, address, blocked), "Sender blocked", () => [blocked]);
+      },
+      unblockSender: async (unblocked) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        await run("unblockSender", (d) => ledgerOps.unblockSender(d, address, unblocked), "Sender unblocked", () => [unblocked]);
+      },
       resetChainData: () => {
         window.localStorage.removeItem("numail_local_ledger_v1");
         setLedger(loadLedger());
