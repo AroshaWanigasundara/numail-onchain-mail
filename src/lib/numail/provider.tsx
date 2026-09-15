@@ -318,6 +318,115 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     [persist],
   );
 
+  /** Replace the active account's local mail view with the current chain state. */
+  const syncMailFromChain = useCallback(
+    async (address: string) => {
+      const api = apiRef.current as AnyApi;
+      const q = api?.query?.nuMail ?? api?.query?.numail;
+      if (!q?.mailItems?.entries || !q?.deliveryState || !q?.mailFolderOf) return false;
+
+      try {
+        const [entries, header] = await Promise.all([
+          q.mailItems.entries(),
+          api.rpc?.chain?.getHeader ? api.rpc.chain.getHeader() : Promise.resolve(null),
+        ]);
+        const chainMail: LedgerState["mail"] = {};
+        const chainDelivery: LedgerState["delivery"] = [];
+
+        for (const [key, raw] of entries as [AnyApi, AnyApi][]) {
+          const mailId = key.args?.[0]?.toString?.();
+          if (!mailId) continue;
+          const value = typeof raw?.isSome === "boolean" ? (raw.isSome ? raw.unwrap() : null) : raw;
+          if (!value) continue;
+          const json = (value.toJSON?.() ?? {}) as Record<string, unknown>;
+          const sender = String(json["sender"] ?? "");
+          const recipients = Array.isArray(json["recipients"])
+            ? (json["recipients"] as unknown[]).map(String)
+            : [];
+          const outgoing = sender === address;
+          const incoming = recipients.includes(address);
+          if (!outgoing && !incoming) continue;
+
+          const attachmentHashes = Array.isArray(json["attachments"])
+            ? (json["attachments"] as unknown[]).map(String)
+            : [];
+          const threadParentRaw = json["threadParent"] ?? json["thread_parent"];
+          const createdAt = Number(json["createdAt"] ?? json["created_at"] ?? 0);
+          chainMail[mailId] = {
+            mailId,
+            sender,
+            recipients,
+            subjectHash: String(json["subjectHash"] ?? json["subject_hash"] ?? ""),
+            bodyRef: String(json["bodyRef"] ?? json["body_ref"] ?? ""),
+            attachments: attachmentHashes.map((cid, index) => ({
+              name: `On-chain attachment ${index + 1}`,
+              size: 0,
+              cid,
+              anchored: true,
+            })),
+            threadParent: threadParentRaw == null ? undefined : String(threadParentRaw),
+            block: createdAt,
+            timestamp: Date.now(),
+          };
+
+          if (outgoing) {
+            chainDelivery.push({ mailId, account: address, status: "Read", folder: "sent" });
+          } else if (incoming) {
+            const [deliveryRaw, folderRaw] = await Promise.all([
+              q.deliveryState(Number(mailId), address),
+              q.mailFolderOf(Number(mailId), address),
+            ]);
+            const hasDelivery =
+              typeof deliveryRaw?.isSome === "boolean" ? deliveryRaw.isSome : !deliveryRaw?.isEmpty;
+            if (!hasDelivery) continue;
+            const deliveryValue = deliveryRaw.unwrapOr ? deliveryRaw.unwrapOr(deliveryRaw) : deliveryRaw;
+            const folderValue = folderRaw?.unwrapOr ? folderRaw.unwrapOr(folderRaw) : folderRaw;
+            const statusValue = deliveryValue?.toString?.() ?? String(deliveryValue);
+            const folderValueText = folderValue?.toUtf8?.() ?? folderValue?.toString?.() ?? "inbox";
+            const deliveryStatus = /tombstone/i.test(statusValue)
+              ? "Tombstoned"
+              : /archive/i.test(statusValue)
+                ? "Archived"
+                : /read/i.test(statusValue)
+                  ? "Read"
+                  : "Delivered";
+            chainDelivery.push({ mailId, account: address, status: deliveryStatus, folder: folderValueText });
+          }
+        }
+
+        persist((draft) => {
+          draft.mail = chainMail;
+          draft.delivery = chainDelivery;
+          draft.payloads = {};
+          const headNumber = Number(header?.number?.toString?.() ?? 0);
+          if (headNumber > 0) draft.block = headNumber;
+        });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error("Could not load mailbox from blockchain", { description: message });
+        return false;
+      }
+    },
+    [persist],
+  );
+
+  const syncAccountFromChain = useCallback(
+    async (address: string) => {
+      const found = await syncMailboxFromChain(address);
+      if (found) await syncMailFromChain(address);
+      else {
+        persist((draft) => {
+          draft.mail = {};
+          draft.delivery = [];
+          draft.payloads = {};
+        });
+      }
+      return found;
+    },
+    [persist, syncMailboxFromChain, syncMailFromChain],
+  );
+
   const connectWallet = useCallback(async () => {
     setWalletError(null);
     try {
@@ -339,14 +448,14 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       const first = list[0]!;
       setAccount(first);
       toast.success("Wallet connected", { description: first.name });
-      const found = await syncMailboxFromChain(first.address);
+      const found = await syncAccountFromChain(first.address);
       if (found) toast.info("Existing mailbox found on chain");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setWalletError(msg);
       toast.error("Wallet connection failed", { description: msg });
     }
-  }, [syncMailboxFromChain]);
+  }, [syncAccountFromChain]);
 
   const useDevAccount = useCallback(
     async (name: DevAccountName) => {
@@ -361,7 +470,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success(`Using dev account ${name}`, {
           description: "Signs with the well-known //" + name + " key — real extrinsics on your dev node.",
         });
-        const found = await syncMailboxFromChain(acc.address);
+        const found = await syncAccountFromChain(acc.address);
         if (found) toast.info("Existing mailbox found on chain");
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -369,7 +478,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.error("Could not load dev account", { description: msg });
       }
     },
-    [syncMailboxFromChain],
+    [syncAccountFromChain],
   );
 
   const useDemoAccount = useCallback(() => {
@@ -385,10 +494,10 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       const found = accounts.find((a) => a.address === address);
       if (found) {
         setAccount(found);
-        if (found.source !== "demo") void syncMailboxFromChain(address);
+        if (found.source !== "demo") void syncAccountFromChain(address);
       }
     },
-    [accounts, syncMailboxFromChain],
+    [accounts, syncAccountFromChain],
   );
 
   const disconnectWallet = useCallback(() => {
@@ -448,19 +557,19 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     ) => {
       if (!account) throw new Error("Connect a wallet first");
       const api = apiRef.current;
-      const live =
-        status === "connected" &&
-        account.source !== "demo" &&
-        Boolean(txArgs) &&
-        hasCall(api, label);
+      const blockchainMode = status === "connected" && palletAvailable && account.source !== "demo";
+      const live = blockchainMode && Boolean(txArgs) && hasCall(api, label);
 
       setBusy(label);
       try {
-        if (live) {
+        if (blockchainMode && !live) {
+          throw new Error(`Blockchain action nuMail.${label} is unavailable; no local change was made.`);
+        }
+        if (live && txArgs) {
           // ---- real chain submission ----
           let result;
           try {
-            result = await submitExtrinsic(api, account.address, account.source, label, txArgs!(), account.devName);
+            result = await submitExtrinsic(api, account.address, account.source, label, txArgs(), account.devName);
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             const code = msg.split(".").pop() ?? msg;
@@ -509,48 +618,43 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     [account, persist, status, palletAvailable],
   );
 
-  /**
-   * The pallet only lets a *recipient* mutate delivery state (mark_read,
-   * move_to_folder, tombstone) and only for mail that exists on chain (numeric
-   * u64 id). Sent-folder items and locally simulated mail must stay local,
-   * otherwise the runtime rejects the extrinsic with NotRecipient.
-   */
-  const chainDelivery = useCallback(
-    async (mailId: string) => {
-      if (!account || account.source === "demo" || !/^\d+$/.test(mailId)) return false;
-
-      // The chain is authoritative here. Local envelopes are only a cache and
-      // can be stale (or share an id with mail created before this browser saw
-      // it), so checking `mail.recipients` can submit with the wrong ownership.
+  /** Resolve a UI folder label to the exact Bytes value stored in the mailbox. */
+  const chainFolderBytes = useCallback(
+    async (folder: string) => {
+      if (!account) throw new Error("Connect a wallet first");
       const api = apiRef.current as AnyApi;
       const q = api?.query?.nuMail ?? api?.query?.numail;
-      if (status === "connected" && q?.deliveryState) {
-        try {
-          const delivery = await q.deliveryState(Number(mailId), account.address);
-          return typeof delivery?.isSome === "boolean" ? delivery.isSome : !delivery?.isEmpty;
-        } catch {
-          return false;
-        }
-      }
-
-      const mail = ledgerRef.current.mail[mailId];
-      return Boolean(mail && mail.recipients.includes(account.address));
+      if (!q?.mailboxes) throw new Error("NuMail mailbox storage is unavailable");
+      const raw = await q.mailboxes(account.address);
+      if (typeof raw?.isSome === "boolean" && !raw.isSome) throw new Error("Mailbox not found on blockchain");
+      const value = raw?.unwrapOr ? raw.unwrapOr(raw) : raw;
+      const json = (value?.toJSON?.() ?? {}) as Record<string, unknown>;
+      const stored = Array.isArray(json["folders"]) ? (json["folders"] as unknown[]).map(String) : [];
+      const decode = (hex: string) => {
+        if (!hex.startsWith("0x")) return hex;
+        const bytes = hex.slice(2).match(/.{1,2}/g) ?? [];
+        return bytes.map((byte) => String.fromCharCode(Number.parseInt(byte, 16))).join("");
+      };
+      const exact = stored.find((candidate) => decode(candidate) === folder);
+      if (!exact) throw new Error(`Folder "${folder}" is not registered in your blockchain mailbox`);
+      return exact;
     },
-    [account, status],
+    [account],
   );
 
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
-      createMailbox: (policy, retention, folders) => {
+      createMailbox: async (policy, retention, folders) => {
         // inbox/sent/archive must always be registered on chain, plus any
         // custom folders the user added in the UI.
         const allFolders = Array.from(new Set([...DEFAULT_FOLDERS, ...folders]));
-        return run(
+        await run(
           "createMailbox",
           (d) => ledgerOps.createMailbox(d, account!.address, policy, retention, folders),
           "Mailbox created",
           () => [encodePolicy(policy), retention ?? null, allFolders],
-        ).then(() => undefined);
+        );
+        if (account?.source !== "demo") await syncAccountFromChain(account.address);
       },
       setPolicy: (policy, retention) =>
         run(
@@ -592,31 +696,32 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         return id;
       },
       markRead: async (mailId) => {
-        const isRecipient = await chainDelivery(mailId);
         await run(
           "markRead",
           (d) => ledgerOps.markRead(d, account!.address, mailId),
           "Marked as read",
-          isRecipient ? () => [Number(mailId)] : undefined,
+          () => [Number(mailId)],
         );
+        if (account?.source !== "demo") await syncMailFromChain(account.address);
       },
       moveToFolder: async (mailId, folder) => {
-        const isRecipient = await chainDelivery(mailId);
+        const folderBytes = onChain ? await chainFolderBytes(folder) : folder;
         await run(
           "moveToFolder",
           (d) => ledgerOps.moveToFolder(d, account!.address, mailId, folder),
           `Moved to ${folder}`,
-          isRecipient ? () => [Number(mailId), folder] : undefined,
+          () => [Number(mailId), folderBytes],
         );
+        if (account?.source !== "demo") await syncMailFromChain(account.address);
       },
       tombstone: async (mailId) => {
-        const isRecipient = await chainDelivery(mailId);
         await run(
           "tombstone",
           (d) => ledgerOps.tombstone(d, account!.address, mailId),
           "Mail tombstoned",
-          isRecipient ? () => [Number(mailId)] : undefined,
+          () => [Number(mailId)],
         );
+        if (account?.source !== "demo") await syncMailFromChain(account.address);
       },
       blockSender: (address) =>
         run("blockSender", (d) => ledgerOps.blockSender(d, account!.address, address), "Sender blocked", () => [
@@ -632,7 +737,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success("Local NuMail state cleared");
       },
     }),
-    [run, account, chainDelivery],
+    [run, account, onChain, chainFolderBytes, syncAccountFromChain, syncMailFromChain],
   );
 
   const value: NumailContextValue = {
