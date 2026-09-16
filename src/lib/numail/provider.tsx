@@ -371,7 +371,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           } else if (incoming) {
             const [deliveryRaw, folderRaw] = await Promise.all([
               q.deliveryState(Number(mailId), address),
-              q.mailFolderOf(Number(mailId), address),
+              q.mailFolderOf(address, Number(mailId)),
             ]);
             const hasDelivery =
               typeof deliveryRaw?.isSome === "boolean" ? deliveryRaw.isSome : !deliveryRaw?.isEmpty;
@@ -423,6 +423,11 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     },
     [persist, syncMailboxFromChain, syncMailFromChain],
   );
+
+  useEffect(() => {
+    if (!account || account.source === "demo" || status !== "connected" || !palletAvailable) return;
+    void syncAccountFromChain(account.address);
+  }, [account, status, palletAvailable, syncAccountFromChain]);
 
   const connectWallet = useCallback(async () => {
     setWalletError(null);
