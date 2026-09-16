@@ -429,6 +429,27 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     void syncAccountFromChain(account.address);
   }, [account, status, palletAvailable, syncAccountFromChain]);
 
+  useEffect(() => {
+    if (!account || account.source === "demo" || status !== "connected" || !palletAvailable) return;
+    const api = apiRef.current as AnyApi;
+    if (!api?.rpc?.chain?.subscribeNewHeads) return;
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    void api.rpc.chain
+      .subscribeNewHeads(() => {
+        if (active) void syncMailFromChain(account.address);
+      })
+      .then((stop: () => void) => {
+        if (active) unsubscribe = stop;
+        else stop();
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [account, status, palletAvailable, syncMailFromChain]);
+
   const connectWallet = useCallback(async () => {
     setWalletError(null);
     try {
