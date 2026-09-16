@@ -11,10 +11,12 @@ export const Route = createFileRoute("/settings")({
           "Configure your Substrate WebSocket endpoint, mailbox acceptance policy, folders and blocked senders for the NuMail on-chain email client.",
       },
       { property: "og:title", content: "NuMail Settings — Network, Policy & Blocklist" },
+      { property: "og:type", content: "website" },
       {
         property: "og:description",
         content: "Endpoint presets, connection diagnostics, mailbox policy and blocklist management for NuMail.",
       },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: SettingsPage,
