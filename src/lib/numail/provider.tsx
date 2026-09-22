@@ -35,6 +35,7 @@ import {
   type AnyApi,
 } from "./chain";
 import { devAccount, type DevAccountName } from "./devAccounts";
+import { ensureKeyPair } from "./keys";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -673,11 +674,14 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         // inbox/sent/archive must always be registered on chain, plus any
         // custom folders the user added in the UI.
         const allFolders = Array.from(new Set([...DEFAULT_FOLDERS, ...folders]));
+        // RSA-4096 identity key: the private key stays in this browser, the
+        // SPKI/DER public key is registered on chain with the mailbox.
+        const keys = await ensureKeyPair(address);
         await run(
           "createMailbox",
           (d) => ledgerOps.createMailbox(d, address, policy, retention, folders),
           "Mailbox created",
-          () => [encodePolicy(policy), retention ?? null, allFolders],
+          () => [encodePolicy(policy), retention ?? null, allFolders, `0x${keys.publicKeyHex}`],
         );
         if (account.source !== "demo") await syncAccountFromChain(address);
       },

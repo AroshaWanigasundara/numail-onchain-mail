@@ -131,6 +131,11 @@ export function CreateMailboxCard() {
           </p>
         </div>
 
+        <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+          An RSA-4096 encryption key is generated on this device when you create the mailbox. Only the public key is
+          stored on chain; the private key stays in your browser and can be viewed or backed up from Settings → Account.
+        </div>
+
         <Button className="w-full" onClick={submit} disabled={busy !== null}>
           {busy === "create_mailbox" && <Loader2 className="h-4 w-4 animate-spin" />}
           Create mailbox

@@ -17,7 +17,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Plus, ShieldOff, Trash2 } from "lucide-react";
+import { Copy, Download, Eye, EyeOff, Loader2, Plus, ShieldOff, Trash2 } from "lucide-react";
+import { loadKeyPair, privateKeyPem, publicKeyPem, type NumailKeyPair } from "@/lib/numail/keys";
+import { useEffect } from "react";
 import { CONSTANTS, type MailboxPolicy, type PolicyKind } from "@/lib/numail/types";
 import { useNumail } from "@/lib/numail/provider";
 import { GLOSSARY, Hint, policyLabel, shortAddr } from "./shared";
@@ -34,6 +36,13 @@ export function SettingsPage() {
   const [newFolder, setNewFolder] = useState("");
   const [blockInput, setBlockInput] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
+  const [keys, setKeys] = useState<NumailKeyPair | null>(null);
+  const [showPrivate, setShowPrivate] = useState(false);
+
+  useEffect(() => {
+    setKeys(account ? loadKeyPair(account.address) : null);
+    setShowPrivate(false);
+  }, [account]);
 
   const savePolicy = async () => {
     const policy: MailboxPolicy = { kind };
@@ -208,6 +217,71 @@ export function SettingsPage() {
                 <span className="text-muted-foreground">Created at block</span>
                 <span className="text-mono">#{mailbox?.createdAtBlock ?? "—"}</span>
               </div>
+            </div>
+
+            <div className="surface-panel space-y-3 p-5">
+              <h2 className="text-lg font-semibold">Encryption keys</h2>
+              {!keys ? (
+                <p className="text-sm text-muted-foreground">
+                  No key on this device yet. A RSA-4096 key is generated when you create your mailbox; its public part is
+                  stored on chain.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    RSA-4096 key created {new Date(keys.createdAt).toLocaleString()}. The private key never leaves this
+                    browser — keep a backup somewhere safe.
+                  </p>
+                  <div className="space-y-1">
+                    <Label>Public key (on chain)</Label>
+                    <textarea
+                      readOnly
+                      spellCheck={false}
+                      value={publicKeyPem(keys)}
+                      className="text-mono h-24 w-full resize-none rounded-md border border-border bg-muted/40 p-2 text-xs"
+                    />
+                  </div>
+                  {showPrivate && (
+                    <div className="space-y-1">
+                      <Label>Private key (keep secret)</Label>
+                      <textarea
+                        readOnly
+                        spellCheck={false}
+                        value={privateKeyPem(keys)}
+                        className="text-mono h-32 w-full resize-none rounded-md border border-destructive/50 bg-muted/40 p-2 text-xs"
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" onClick={() => setShowPrivate((v) => !v)}>
+                      {showPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPrivate ? "Hide private key" : "Show private key"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void navigator.clipboard.writeText(privateKeyPem(keys))}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy private key
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        const blob = new Blob([privateKeyPem(keys)], { type: "text/plain" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = "numail-private-key.pem";
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <Download className="h-4 w-4" />
+                      Download
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="surface-panel p-5">
