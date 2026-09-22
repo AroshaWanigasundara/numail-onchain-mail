@@ -36,6 +36,13 @@ export function SettingsPage() {
   const [newFolder, setNewFolder] = useState("");
   const [blockInput, setBlockInput] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
+  const [keys, setKeys] = useState<NumailKeyPair | null>(null);
+  const [showPrivate, setShowPrivate] = useState(false);
+
+  useEffect(() => {
+    setKeys(account ? loadKeyPair(account.address) : null);
+    setShowPrivate(false);
+  }, [account]);
 
   const savePolicy = async () => {
     const policy: MailboxPolicy = { kind };
