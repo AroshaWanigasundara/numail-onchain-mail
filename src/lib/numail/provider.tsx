@@ -35,7 +35,7 @@ import {
   type AnyApi,
 } from "./chain";
 import { devAccount, type DevAccountName } from "./devAccounts";
-import { ensureKeyPair } from "./keys";
+import { decryptBodyWithKey, encryptBodyForRecipients, ensureKeyPair, loadKeyPair } from "./keys";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
