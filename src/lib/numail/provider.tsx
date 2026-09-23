@@ -330,6 +330,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         ]);
         const chainMail: LedgerState["mail"] = {};
         const chainDelivery: LedgerState["delivery"] = [];
+        const decrypted: Record<string, string> = {};
+        const myKeys = loadKeyPair(address);
 
         for (const [key, raw] of entries as [AnyApi, AnyApi][]) {
           const mailId = key.args?.[0]?.toString?.();
