@@ -415,7 +415,14 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         persist((draft) => {
           draft.mail = chainMail;
           draft.delivery = chainDelivery;
-          draft.payloads = {};
+          // keep locally known subjects/sent bodies, add newly decrypted bodies
+          const payloads: LedgerState["payloads"] = {};
+          for (const id of Object.keys(chainMail)) {
+            const existing = draft.payloads[id];
+            const body = decrypted[id] ?? existing?.body ?? "";
+            if (existing || decrypted[id]) payloads[id] = { subject: existing?.subject ?? "Encrypted subject", body };
+          }
+          draft.payloads = payloads;
           const headNumber = Number(header?.number?.toString?.() ?? 0);
           if (headNumber > 0) draft.block = headNumber;
         });
