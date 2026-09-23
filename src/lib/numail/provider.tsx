@@ -369,6 +369,24 @@ export function NumailProvider({ children }: { children: ReactNode }) {
             timestamp: Date.now(),
           };
 
+          // Hybrid decryption: unwrap this account's AES key, then the body.
+          const encryptedBody = String(json["encryptedBody"] ?? json["encrypted_body"] ?? "");
+          const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
+          if (incoming && myKeys && encryptedBody && Array.isArray(encryptedKeysRaw)) {
+            const entry = (encryptedKeysRaw as unknown[]).find(
+              (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
+            ) as unknown[] | undefined;
+            const wrapped = entry ? String(entry[1]) : "";
+            if (wrapped) {
+              try {
+                decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
+              } catch {
+                /* not decryptable with this device's key */
+              }
+            }
+          }
+
+
           if (outgoing) {
             chainDelivery.push({ mailId, account: address, status: "Read", folder: "sent" });
           } else if (incoming) {
