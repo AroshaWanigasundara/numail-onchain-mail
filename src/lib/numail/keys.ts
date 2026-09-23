@@ -94,11 +94,107 @@ export function privateKeyPem(pair: NumailKeyPair): string {
   return pem("PRIVATE KEY", pair.privateKeyBase64);
 }
 
+/* ------------------------------------------------------------------ */
+/* Minimal DER helpers to convert between SPKI and PKCS#1 RSA keys     */
+/* ------------------------------------------------------------------ */
+
+function derReadLen(bytes: Uint8Array, offset: number): [number, number] {
+  const first = bytes[offset] ?? 0;
+  if (first < 0x80) return [first, offset + 1];
+  const n = first & 0x7f;
+  let len = 0;
+  for (let i = 0; i < n; i++) len = (len << 8) | (bytes[offset + 1 + i] ?? 0);
+  return [len, offset + 1 + n];
+}
+
+function derEncodeLen(len: number): Uint8Array {
+  if (len < 0x80) return new Uint8Array([len]);
+  const parts: number[] = [];
+  let v = len;
+  while (v > 0) {
+    parts.unshift(v & 0xff);
+    v >>= 8;
+  }
+  return new Uint8Array([0x80 | parts.length, ...parts]);
+}
+
+function derWrap(tag: number, content: Uint8Array): Uint8Array {
+  const len = derEncodeLen(content.length);
+  const out = new Uint8Array(1 + len.length + content.length);
+  out[0] = tag;
+  out.set(len, 1);
+  out.set(content, 1 + len.length);
+  return out;
+}
+
+/** Extract the PKCS#1 RSAPublicKey out of an SPKI wrapper. */
+export function spkiToPkcs1(spki: Uint8Array): Uint8Array {
+  // SEQUENCE { SEQUENCE { oid, null }, BIT STRING { 0x00 ‖ RSAPublicKey } }
+  let offset = 0;
+  if (spki[offset++] !== 0x30) throw new Error("Invalid SPKI key");
+  const [, seqContent] = derReadLen(spki, offset);
+  offset = seqContent;
+  if (spki[offset++] !== 0x30) throw new Error("Invalid SPKI algorithm identifier");
+  const [, afterAlg] = derReadLen(spki, offset);
+  const [algLen, algContent] = derReadLen(spki, offset);
+  offset = algContent + algLen;
+  void afterAlg;
+  if (spki[offset++] !== 0x03) throw new Error("Invalid SPKI bit string");
+  const [bitLen, bitContent] = derReadLen(spki, offset);
+  // first content byte is the unused-bits count (0)
+  return spki.slice(bitContent + 1, bitContent + bitLen);
+}
+
+const RSA_ALG_ID = new Uint8Array([
+  0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
+]);
+
+/** Wrap a PKCS#1 RSAPublicKey in an SPKI envelope (for WebCrypto import). */
+export function pkcs1ToSpki(pkcs1: Uint8Array): Uint8Array {
+  const bitString = derWrap(0x03, new Uint8Array([0x00, ...pkcs1]));
+  const inner = new Uint8Array(RSA_ALG_ID.length + bitString.length);
+  inner.set(RSA_ALG_ID, 0);
+  inner.set(bitString, RSA_ALG_ID.length);
+  return derWrap(0x30, inner);
+}
+
+/**
+ * The exact PEM block sent to (and read back from) the blockchain:
+ * a PKCS#1 RSA public key in the classic `RSA PUBLIC KEY` armor.
+ */
 export function publicKeyPem(pair: NumailKeyPair): string {
-  const bytes = pair.publicKeyHex.match(/.{1,2}/g) ?? [];
+  const spki = hexToBytes(pair.publicKeyHex);
+  const pkcs1 = spkiToPkcs1(spki);
   let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(Number.parseInt(b, 16));
-  return pem("PUBLIC KEY", btoa(bin));
+  for (const b of pkcs1) bin += String.fromCharCode(b);
+  return pem("RSA PUBLIC KEY", btoa(bin));
+}
+
+/**
+ * Normalise an on-chain `public_key` value to SPKI hex for WebCrypto.
+ * Accepts the PEM text (hex-encoded or plain) or a raw SPKI hex string.
+ */
+export function chainPublicKeyToSpkiHex(value: string): string {
+  let text = value.trim();
+  if (text.startsWith("0x")) {
+    // could be hex-encoded PEM text or raw DER
+    const bytes = hexToBytes(text);
+    const asText = new TextDecoder().decode(bytes);
+    if (asText.includes("-----BEGIN")) {
+      text = asText;
+    } else {
+      return text.slice(2);
+    }
+  }
+  const match = text.match(/-----BEGIN ([A-Z ]+)-----([\s\S]+?)-----END \1-----/);
+  if (!match) throw new Error("Unrecognized public key format on chain");
+  const label = match[1] ?? "";
+  const b64 = (match[2] ?? "").replace(/\s+/g, "");
+  const bin = atob(b64);
+  const der = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
+  const spki = label === "RSA PUBLIC KEY" ? pkcs1ToSpki(der) : der;
+  return bytesToHex(spki);
 }
 
 /* ------------------------------------------------------------------ */
