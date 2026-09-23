@@ -693,6 +693,28 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     [account],
   );
 
+  /** RSA public keys the recipients registered with their on-chain mailboxes. */
+  const recipientPublicKeys = useCallback(async (recipients: string[]) => {
+    const api = apiRef.current as AnyApi;
+    const q = api?.query?.nuMail ?? api?.query?.numail;
+    if (!q?.mailboxes) throw new Error("NuMail mailbox storage is unavailable");
+    const keys: string[] = [];
+    for (const recipient of recipients) {
+      const raw = await q.mailboxes(recipient);
+      if (typeof raw?.isSome === "boolean" && !raw.isSome) {
+        throw new Error(`${recipient} has no NuMail mailbox yet`);
+      }
+      const value = raw?.unwrapOr ? raw.unwrapOr(raw) : raw;
+      const json = (value?.toJSON?.() ?? {}) as Record<string, unknown>;
+      const pub = String(json["publicKey"] ?? json["public_key"] ?? "");
+      if (!pub || pub === "0x") {
+        throw new Error(`${recipient} has no encryption key registered on chain`);
+      }
+      keys.push(pub);
+    }
+    return keys;
+  }, []);
+
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
       createMailbox: async (policy, retention, folders) => {
