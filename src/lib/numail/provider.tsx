@@ -841,7 +841,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success("Local NuMail state cleared");
       },
     }),
-    [run, account, onChain, chainFolderBytes, syncAccountFromChain, syncMailFromChain],
+    [run, account, onChain, chainFolderBytes, recipientPublicKeys, persist, syncAccountFromChain, syncMailFromChain],
   );
 
   const value: NumailContextValue = {

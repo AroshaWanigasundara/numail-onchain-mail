@@ -6,8 +6,11 @@
  * Calls (from the v15 metadata of the dev chain):
  *
  *   createMailbox(policy: AcceptancePolicy, retentionBlocks: Option<u32>, folders: Vec<Bytes>)
- *   sendMail(recipients: Vec<AccountId32>, subjectHash: H256, bodyRef: H256,
- *            attachments: Vec<H256>, threadParent: Option<u64>)
+ *   sendMail(recipients: Vec<AccountId32>, subjectHash: H256, encryptedBody: Bytes,
+ *            encryptedKeys: Vec<(AccountId32, Bytes)>, attachments: Vec<H256>,
+ *            threadParent: Option<u64>)
+ *   // encryptedBody = AES-256-GCM(nonce ‖ ciphertext ‖ tag); encryptedKeys wrap
+ *   // the AES key with each recipient's registered RSA-4096 public key.
  *   markRead(mailId: u64)
  *   tombstone(mailId: u64)
  *   moveToFolder(mailId: u64, folder: Bytes)
