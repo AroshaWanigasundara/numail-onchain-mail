@@ -755,6 +755,16 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
         let id: string | null = null;
+        // Hybrid encryption: one random AES-256 key encrypts the body, and that
+        // key is wrapped with each recipient's on-chain RSA public key.
+        let encryptedBodyHex = "0x";
+        let encryptedKeys: [string, string][] = [];
+        if (onChain) {
+          const pubKeys = await recipientPublicKeys(input.recipients);
+          const cipher = await encryptBodyForRecipients(input.body, pubKeys);
+          encryptedBodyHex = cipher.encryptedBodyHex;
+          encryptedKeys = input.recipients.map((r, i) => [r, cipher.encryptedKeysHex[i] ?? "0x"]);
+        }
         const result = await run(
           "sendMail",
           (d) => {
@@ -764,7 +774,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           () => [
             input.recipients,
             contentHash(input.subject),
-            contentHash(input.body),
+            encryptedBodyHex,
+            encryptedKeys,
             encodeAttachments(input.attachments),
             input.threadParent && /^\d+$/.test(input.threadParent) ? Number(input.threadParent) : null,
           ],
