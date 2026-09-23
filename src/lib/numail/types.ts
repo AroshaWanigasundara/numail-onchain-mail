@@ -131,4 +131,12 @@ export const PALLET_ERRORS: Record<string, string> = {
   NotRecipient: "Only a recipient of this mail can change its delivery state on chain.",
   NotAuthorized: "This account is not allowed to perform that action on this mail.",
   MailNotFound: "That mail no longer exists on chain.",
+  NoRecipients: "Add at least one recipient before sending.",
+  TooManyRecipients: "This mail has more recipients than the chain allows.",
+  TooManyAttachments: "This mail has more attachments than the chain allows.",
+  EncryptedBodyTooLarge: "The encrypted message is too large for the chain. Shorten it and retry.",
+  EncryptedKeyTooLarge: "A recipient's encrypted key is too large for the chain.",
+  EncryptedKeyCountMismatch: "Each recipient needs their own encrypted key — please retry sending.",
+  EncryptedKeyRecipientMismatch: "An encrypted key did not match a recipient of this mail.",
+  RecipientPolicyRefused: "The recipient's acceptance policy refused this mail (contacts-only or trust score).",
 };

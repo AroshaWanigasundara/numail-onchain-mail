@@ -35,7 +35,7 @@ import {
   type AnyApi,
 } from "./chain";
 import { devAccount, type DevAccountName } from "./devAccounts";
-import { ensureKeyPair } from "./keys";
+import { decryptBodyWithKey, encryptBodyForRecipients, ensureKeyPair, loadKeyPair } from "./keys";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -330,6 +330,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         ]);
         const chainMail: LedgerState["mail"] = {};
         const chainDelivery: LedgerState["delivery"] = [];
+        const decrypted: Record<string, string> = {};
+        const myKeys = loadKeyPair(address);
 
         for (const [key, raw] of entries as [AnyApi, AnyApi][]) {
           const mailId = key.args?.[0]?.toString?.();
@@ -367,6 +369,24 @@ export function NumailProvider({ children }: { children: ReactNode }) {
             timestamp: Date.now(),
           };
 
+          // Hybrid decryption: unwrap this account's AES key, then the body.
+          const encryptedBody = String(json["encryptedBody"] ?? json["encrypted_body"] ?? "");
+          const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
+          if (incoming && myKeys && encryptedBody && Array.isArray(encryptedKeysRaw)) {
+            const entry = (encryptedKeysRaw as unknown[]).find(
+              (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
+            ) as unknown[] | undefined;
+            const wrapped = entry ? String(entry[1]) : "";
+            if (wrapped) {
+              try {
+                decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
+              } catch {
+                /* not decryptable with this device's key */
+              }
+            }
+          }
+
+
           if (outgoing) {
             chainDelivery.push({ mailId, account: address, status: "Read", folder: "sent" });
           } else if (incoming) {
@@ -395,7 +415,14 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         persist((draft) => {
           draft.mail = chainMail;
           draft.delivery = chainDelivery;
-          draft.payloads = {};
+          // keep locally known subjects/sent bodies, add newly decrypted bodies
+          const payloads: LedgerState["payloads"] = {};
+          for (const id of Object.keys(chainMail)) {
+            const existing = draft.payloads[id];
+            const body = decrypted[id] ?? existing?.body ?? "";
+            if (existing || decrypted[id]) payloads[id] = { subject: existing?.subject ?? "Encrypted subject", body };
+          }
+          draft.payloads = payloads;
           const headNumber = Number(header?.number?.toString?.() ?? 0);
           if (headNumber > 0) draft.block = headNumber;
         });
@@ -666,6 +693,28 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     [account],
   );
 
+  /** RSA public keys the recipients registered with their on-chain mailboxes. */
+  const recipientPublicKeys = useCallback(async (recipients: string[]) => {
+    const api = apiRef.current as AnyApi;
+    const q = api?.query?.nuMail ?? api?.query?.numail;
+    if (!q?.mailboxes) throw new Error("NuMail mailbox storage is unavailable");
+    const keys: string[] = [];
+    for (const recipient of recipients) {
+      const raw = await q.mailboxes(recipient);
+      if (typeof raw?.isSome === "boolean" && !raw.isSome) {
+        throw new Error(`${recipient} has no NuMail mailbox yet`);
+      }
+      const value = raw?.unwrapOr ? raw.unwrapOr(raw) : raw;
+      const json = (value?.toJSON?.() ?? {}) as Record<string, unknown>;
+      const pub = String(json["publicKey"] ?? json["public_key"] ?? "");
+      if (!pub || pub === "0x") {
+        throw new Error(`${recipient} has no encryption key registered on chain`);
+      }
+      keys.push(pub);
+    }
+    return keys;
+  }, []);
+
   const actions = useMemo<NumailContextValue["actions"]>(
     () => ({
       createMailbox: async (policy, retention, folders) => {
@@ -706,6 +755,16 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
         let id: string | null = null;
+        // Hybrid encryption: one random AES-256 key encrypts the body, and that
+        // key is wrapped with each recipient's on-chain RSA public key.
+        let encryptedBodyHex = "0x";
+        let encryptedKeys: [string, string][] = [];
+        if (onChain) {
+          const pubKeys = await recipientPublicKeys(input.recipients);
+          const cipher = await encryptBodyForRecipients(input.body, pubKeys);
+          encryptedBodyHex = cipher.encryptedBodyHex;
+          encryptedKeys = input.recipients.map((r, i) => [r, cipher.encryptedKeysHex[i] ?? "0x"]);
+        }
         const result = await run(
           "sendMail",
           (d) => {
@@ -715,7 +774,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           () => [
             input.recipients,
             contentHash(input.subject),
-            contentHash(input.body),
+            encryptedBodyHex,
+            encryptedKeys,
             encodeAttachments(input.attachments),
             input.threadParent && /^\d+$/.test(input.threadParent) ? Number(input.threadParent) : null,
           ],
@@ -781,7 +841,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success("Local NuMail state cleared");
       },
     }),
-    [run, account, onChain, chainFolderBytes, syncAccountFromChain, syncMailFromChain],
+    [run, account, onChain, chainFolderBytes, recipientPublicKeys, persist, syncAccountFromChain, syncMailFromChain],
   );
 
   const value: NumailContextValue = {
