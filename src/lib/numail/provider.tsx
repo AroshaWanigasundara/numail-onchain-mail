@@ -718,7 +718,10 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       // to text, then normalise to SPKI hex for WebCrypto encryption
       const raw = await q.publicKeys(recipient);
       const value = raw?.unwrapOr ? raw.unwrapOr(raw) : raw;
-      const pub = String(value?.toHex?.() ?? value?.toString?.() ?? "");
+      const jsonValue = value?.toJSON?.();
+      const pub = String(
+        typeof jsonValue === "string" ? jsonValue : (value?.toHex?.() ?? value?.toString?.() ?? ""),
+      );
       if (!pub || pub === "0x") {
         throw new Error(`${recipient} has no encryption key registered on chain`);
       }
