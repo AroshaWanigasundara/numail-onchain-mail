@@ -378,14 +378,21 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           };
 
           // Hybrid decryption: unwrap this account's AES key, then the body.
-          const encryptedBody = String(json["encryptedBody"] ?? json["encrypted_body"] ?? "");
+          // The chain returns Vec<u8> either as a hex string or as a byte
+          // array — normalise both to 0x-hex before decrypting.
+          const toHexBytes = (v: unknown): string => {
+            if (typeof v === "string") return v.startsWith("0x") ? v : `0x${v}`;
+            if (Array.isArray(v)) return `0x${bytesToHex(Uint8Array.from(v.map(Number)))}`;
+            return "";
+          };
+          const encryptedBody = toHexBytes(json["encryptedBody"] ?? json["encrypted_body"]);
           const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
-          if (incoming && myKeys && encryptedBody && Array.isArray(encryptedKeysRaw)) {
+          if (incoming && myKeys && encryptedBody !== "0x" && Array.isArray(encryptedKeysRaw)) {
             const entry = (encryptedKeysRaw as unknown[]).find(
               (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
             ) as unknown[] | undefined;
-            const wrapped = entry ? String(entry[1]) : "";
-            if (wrapped) {
+            const wrapped = entry ? toHexBytes(entry[1]) : "";
+            if (wrapped !== "0x" && wrapped) {
               try {
                 decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
               } catch {
