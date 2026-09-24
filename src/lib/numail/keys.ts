@@ -135,10 +135,8 @@ export function spkiToPkcs1(spki: Uint8Array): Uint8Array {
   const [, seqContent] = derReadLen(spki, offset);
   offset = seqContent;
   if (spki[offset++] !== 0x30) throw new Error("Invalid SPKI algorithm identifier");
-  const [, afterAlg] = derReadLen(spki, offset);
   const [algLen, algContent] = derReadLen(spki, offset);
   offset = algContent + algLen;
-  void afterAlg;
   if (spki[offset++] !== 0x03) throw new Error("Invalid SPKI bit string");
   const [bitLen, bitContent] = derReadLen(spki, offset);
   // first content byte is the unused-bits count (0)
