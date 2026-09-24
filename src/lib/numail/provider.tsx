@@ -35,7 +35,15 @@ import {
   type AnyApi,
 } from "./chain";
 import { devAccount, type DevAccountName } from "./devAccounts";
-import { decryptBodyWithKey, encryptBodyForRecipients, ensureKeyPair, loadKeyPair } from "./keys";
+import {
+  bytesToHex,
+  chainPublicKeyToSpkiHex,
+  decryptBodyWithKey,
+  encryptBodyForRecipients,
+  ensureKeyPair,
+  loadKeyPair,
+  publicKeyPem,
+} from "./keys";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -710,7 +718,9 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       if (!pub || pub === "0x") {
         throw new Error(`${recipient} has no encryption key registered on chain`);
       }
-      keys.push(pub);
+      // the chain stores the RSA PUBLIC KEY PEM text — normalise it back to
+      // SPKI hex for WebCrypto encryption
+      keys.push(chainPublicKeyToSpkiHex(pub));
     }
     return keys;
   }, []);
@@ -724,13 +734,15 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         // custom folders the user added in the UI.
         const allFolders = Array.from(new Set([...DEFAULT_FOLDERS, ...folders]));
         // RSA-4096 identity key: the private key stays in this browser, the
-        // SPKI/DER public key is registered on chain with the mailbox.
+        // public key is registered on chain as the exact PEM text
+        // (-----BEGIN RSA PUBLIC KEY----- … -----END RSA PUBLIC KEY-----).
         const keys = await ensureKeyPair(address);
+        const pemBytes = new TextEncoder().encode(publicKeyPem(keys));
         await run(
           "createMailbox",
           (d) => ledgerOps.createMailbox(d, address, policy, retention, folders),
           "Mailbox created",
-          () => [encodePolicy(policy), retention ?? null, allFolders, `0x${keys.publicKeyHex}`],
+          () => [encodePolicy(policy), retention ?? null, allFolders, `0x${bytesToHex(pemBytes)}`],
         );
         if (account.source !== "demo") await syncAccountFromChain(address);
       },
