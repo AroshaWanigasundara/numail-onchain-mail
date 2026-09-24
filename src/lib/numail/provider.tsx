@@ -706,20 +706,22 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     const api = apiRef.current as AnyApi;
     const q = api?.query?.nuMail ?? api?.query?.numail;
     if (!q?.mailboxes) throw new Error("NuMail mailbox storage is unavailable");
+    if (!q.publicKeys) throw new Error("NuMail public key storage is unavailable");
     const keys: string[] = [];
     for (const recipient of recipients) {
-      const raw = await q.mailboxes(recipient);
-      if (typeof raw?.isSome === "boolean" && !raw.isSome) {
+      const mailbox = await q.mailboxes(recipient);
+      if (typeof mailbox?.isSome === "boolean" && !mailbox.isSome) {
         throw new Error(`${recipient} has no NuMail mailbox yet`);
       }
+      // the chain stores the key in the `publicKeys` map as hex-encoded
+      // PEM text (-----BEGIN RSA PUBLIC KEY----- …) — decode the hex back
+      // to text, then normalise to SPKI hex for WebCrypto encryption
+      const raw = await q.publicKeys(recipient);
       const value = raw?.unwrapOr ? raw.unwrapOr(raw) : raw;
-      const json = (value?.toJSON?.() ?? {}) as Record<string, unknown>;
-      const pub = String(json["publicKey"] ?? json["public_key"] ?? "");
+      const pub = String(value?.toHex?.() ?? value?.toString?.() ?? "");
       if (!pub || pub === "0x") {
         throw new Error(`${recipient} has no encryption key registered on chain`);
       }
-      // the chain stores the RSA PUBLIC KEY PEM text — normalise it back to
-      // SPKI hex for WebCrypto encryption
       keys.push(chainPublicKeyToSpkiHex(pub));
     }
     return keys;
