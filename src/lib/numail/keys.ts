@@ -269,7 +269,7 @@ export async function encryptBodyForRecipients(
     encryptedKeysHex.push(bytesToHex(wrapped));
   }
 
-  return { encryptedBodyB64: toBase64(combined), encryptedKeysHex };
+  return { encryptedBodyB64: toBase64(bufferSource(combined)), encryptedKeysHex };
 }
 
 /**
