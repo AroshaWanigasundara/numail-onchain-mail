@@ -378,21 +378,32 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           };
 
           // Hybrid decryption: unwrap this account's AES key, then the body.
-          // The chain returns Vec<u8> either as a hex string or as a byte
-          // array — normalise both to 0x-hex before decrypting.
-          const toHexBytes = (v: unknown): string => {
-            if (typeof v === "string") return v.startsWith("0x") ? v : `0x${v}`;
-            if (Array.isArray(v)) return `0x${bytesToHex(Uint8Array.from(v.map(Number)))}`;
+          // The chain stores the base64 body and hex key as UTF-8 bytes and
+          // returns them as hex text or a byte array — decode back to the
+          // original text characters before decrypting.
+          const toText = (v: unknown): string => {
+            if (typeof v === "string") {
+              const hex = v.startsWith("0x") ? v.slice(2) : v;
+              if (/^[0-9a-fA-F]*$/.test(hex) && hex.length % 2 === 0 && hex.length > 0) {
+                try {
+                  return new TextDecoder().decode(hexToBytes(hex));
+                } catch {
+                  return v;
+                }
+              }
+              return v;
+            }
+            if (Array.isArray(v)) return new TextDecoder().decode(Uint8Array.from(v.map(Number)));
             return "";
           };
-          const encryptedBody = toHexBytes(json["encryptedBody"] ?? json["encrypted_body"]);
+          const encryptedBody = toText(json["encryptedBody"] ?? json["encrypted_body"]);
           const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
-          if (incoming && myKeys && encryptedBody !== "0x" && Array.isArray(encryptedKeysRaw)) {
+          if (incoming && myKeys && encryptedBody && Array.isArray(encryptedKeysRaw)) {
             const entry = (encryptedKeysRaw as unknown[]).find(
               (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
             ) as unknown[] | undefined;
-            const wrapped = entry ? toHexBytes(entry[1]) : "";
-            if (wrapped !== "0x" && wrapped) {
+            const wrapped = entry ? toText(entry[1]) : "";
+            if (wrapped) {
               try {
                 decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
               } catch {
