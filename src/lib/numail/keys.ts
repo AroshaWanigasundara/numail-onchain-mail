@@ -224,12 +224,6 @@ function fromBase64(base64: string): Uint8Array {
   return out;
 }
 
-function toBase64(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-}
-
 function bufferSource(bytes: Uint8Array): ArrayBuffer {
   return bytes.slice().buffer;
 }
