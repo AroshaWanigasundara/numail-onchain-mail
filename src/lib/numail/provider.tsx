@@ -781,13 +781,16 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         let id: string | null = null;
         // Hybrid encryption: one random AES-256 key encrypts the body, and that
         // key is wrapped with each recipient's on-chain RSA public key.
+        // The outputs are text (base64 body, hex keys) — they go on chain
+        // byte-for-byte as UTF-8, with no reformatting.
+        const textToChainBytes = (text: string) => `0x${bytesToHex(new TextEncoder().encode(text))}`;
         let encryptedBodyHex = "0x";
         let encryptedKeys: [string, string][] = [];
         if (onChain) {
           const pubKeys = await recipientPublicKeys(input.recipients);
           const cipher = await encryptBodyForRecipients(input.body, pubKeys);
-          encryptedBodyHex = cipher.encryptedBodyHex;
-          encryptedKeys = input.recipients.map((r, i) => [r, cipher.encryptedKeysHex[i] ?? "0x"]);
+          encryptedBodyHex = textToChainBytes(cipher.encryptedBodyB64);
+          encryptedKeys = input.recipients.map((r, i) => [r, textToChainBytes(cipher.encryptedKeysHex[i] ?? "")]);
         }
         const result = await run(
           "sendMail",
