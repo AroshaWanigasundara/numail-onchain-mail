@@ -41,6 +41,7 @@ import {
   decryptBodyWithKey,
   encryptBodyForRecipients,
   ensureKeyPair,
+  hexToBytes,
   loadKeyPair,
   publicKeyPem,
 } from "./keys";
