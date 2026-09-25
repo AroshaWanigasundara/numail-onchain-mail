@@ -41,6 +41,7 @@ import {
   decryptBodyWithKey,
   encryptBodyForRecipients,
   ensureKeyPair,
+  hexToBytes,
   loadKeyPair,
   publicKeyPem,
 } from "./keys";
@@ -378,21 +379,32 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           };
 
           // Hybrid decryption: unwrap this account's AES key, then the body.
-          // The chain returns Vec<u8> either as a hex string or as a byte
-          // array — normalise both to 0x-hex before decrypting.
-          const toHexBytes = (v: unknown): string => {
-            if (typeof v === "string") return v.startsWith("0x") ? v : `0x${v}`;
-            if (Array.isArray(v)) return `0x${bytesToHex(Uint8Array.from(v.map(Number)))}`;
+          // The chain stores the base64 body and hex key as UTF-8 bytes and
+          // returns them as hex text or a byte array — decode back to the
+          // original text characters before decrypting.
+          const toText = (v: unknown): string => {
+            if (typeof v === "string") {
+              const hex = v.startsWith("0x") ? v.slice(2) : v;
+              if (/^[0-9a-fA-F]*$/.test(hex) && hex.length % 2 === 0 && hex.length > 0) {
+                try {
+                  return new TextDecoder().decode(hexToBytes(hex));
+                } catch {
+                  return v;
+                }
+              }
+              return v;
+            }
+            if (Array.isArray(v)) return new TextDecoder().decode(Uint8Array.from(v.map(Number)));
             return "";
           };
-          const encryptedBody = toHexBytes(json["encryptedBody"] ?? json["encrypted_body"]);
+          const encryptedBody = toText(json["encryptedBody"] ?? json["encrypted_body"]);
           const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
-          if (incoming && myKeys && encryptedBody !== "0x" && Array.isArray(encryptedKeysRaw)) {
+          if (incoming && myKeys && encryptedBody && Array.isArray(encryptedKeysRaw)) {
             const entry = (encryptedKeysRaw as unknown[]).find(
               (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
             ) as unknown[] | undefined;
-            const wrapped = entry ? toHexBytes(entry[1]) : "";
-            if (wrapped !== "0x" && wrapped) {
+            const wrapped = entry ? toText(entry[1]) : "";
+            if (wrapped) {
               try {
                 decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
               } catch {
@@ -781,13 +793,16 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         let id: string | null = null;
         // Hybrid encryption: one random AES-256 key encrypts the body, and that
         // key is wrapped with each recipient's on-chain RSA public key.
+        // The outputs are text (base64 body, hex keys) — they go on chain
+        // byte-for-byte as UTF-8, with no reformatting.
+        const textToChainBytes = (text: string) => `0x${bytesToHex(new TextEncoder().encode(text))}`;
         let encryptedBodyHex = "0x";
         let encryptedKeys: [string, string][] = [];
         if (onChain) {
           const pubKeys = await recipientPublicKeys(input.recipients);
           const cipher = await encryptBodyForRecipients(input.body, pubKeys);
-          encryptedBodyHex = cipher.encryptedBodyHex;
-          encryptedKeys = input.recipients.map((r, i) => [r, cipher.encryptedKeysHex[i] ?? "0x"]);
+          encryptedBodyHex = textToChainBytes(cipher.encryptedBodyB64);
+          encryptedKeys = input.recipients.map((r, i) => [r, textToChainBytes(cipher.encryptedKeysHex[i] ?? "")]);
         }
         const result = await run(
           "sendMail",

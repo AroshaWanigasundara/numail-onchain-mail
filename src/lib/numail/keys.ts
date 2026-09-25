@@ -229,15 +229,17 @@ function bufferSource(bytes: Uint8Array): ArrayBuffer {
 }
 
 export interface HybridCiphertext {
-  /** 0x-prefixed: 12-byte nonce ‖ ciphertext ‖ 16-byte GCM tag */
-  encryptedBodyHex: string;
-  /** one 0x-prefixed RSA-OAEP wrapped AES key per recipient, same order */
+  /** base64 text: 12-byte nonce ‖ ciphertext ‖ 16-byte GCM tag */
+  encryptedBodyB64: string;
+  /** one RSA-OAEP wrapped AES key per recipient, hex text without 0x, same order */
   encryptedKeysHex: string[];
 }
 
 /**
  * 1) random AES-256 key, 2) AES-256-GCM over the body (nonce ‖ ct ‖ tag),
  * 3) the AES key wrapped with each recipient's RSA-4096 public key (SPKI).
+ * Outputs are text (base64 body, hex keys) — they go on chain as UTF-8 bytes
+ * exactly as produced, with no further reformatting.
  */
 export async function encryptBodyForRecipients(
   body: string,
@@ -264,15 +266,19 @@ export async function encryptBodyForRecipients(
       ["encrypt"],
     );
     const wrapped = new Uint8Array(await subtle.encrypt({ name: "RSA-OAEP" }, pub, bufferSource(rawAesKey)));
-    encryptedKeysHex.push(`0x${bytesToHex(wrapped)}`);
+    encryptedKeysHex.push(bytesToHex(wrapped));
   }
 
-  return { encryptedBodyHex: `0x${bytesToHex(combined)}`, encryptedKeysHex };
+  return { encryptedBodyB64: toBase64(bufferSource(combined)), encryptedKeysHex };
 }
 
-/** Recipient-side: unwrap the AES key with the private key, then decrypt the body. */
+/**
+ * Recipient-side: unwrap the AES key with the private key, then decrypt the
+ * body. `encryptedBodyB64` is the base64 text stored on chain;
+ * `encryptedKeyHex` is the hex text stored on chain (0x prefix tolerated).
+ */
 export async function decryptBodyWithKey(
-  encryptedBodyHex: string,
+  encryptedBodyB64: string,
   encryptedKeyHex: string,
   privateKeyBase64: string,
 ): Promise<string> {
@@ -286,7 +292,7 @@ export async function decryptBodyWithKey(
   );
   const rawAesKey = await subtle.decrypt({ name: "RSA-OAEP" }, priv, bufferSource(hexToBytes(encryptedKeyHex)));
   const aesKey = await subtle.importKey("raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]);
-  const all = hexToBytes(encryptedBodyHex);
+  const all = fromBase64(encryptedBodyB64);
   const nonce = all.slice(0, 12);
   const payload = all.slice(12);
   const plain = await subtle.decrypt(
