@@ -398,21 +398,39 @@ export function NumailProvider({ children }: { children: ReactNode }) {
             return "";
           };
           const encryptedBody = toText(json["encryptedBody"] ?? json["encrypted_body"]);
-          const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
-          if (incoming && myKeys && encryptedBody && Array.isArray(encryptedKeysRaw)) {
-            const entry = (encryptedKeysRaw as unknown[]).find(
-              (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
-            ) as unknown[] | undefined;
-            const wrapped = entry ? toText(entry[1]) : "";
-            if (wrapped) {
-              try {
-                decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
-              } catch {
-                /* not decryptable with this device's key */
+          if (incoming && myKeys && encryptedBody) {
+            try {
+              // Step 1: read this recipient's wrapped AES key from the
+              // dedicated storage map mailEncryptedKeys(mailId, account).
+              let wrapped = "";
+              if (q.mailEncryptedKeys) {
+                const keyRaw = await q.mailEncryptedKeys(Number(mailId), address);
+                const keyValue =
+                  typeof keyRaw?.isSome === "boolean" ? (keyRaw.isSome ? keyRaw.unwrap() : null) : keyRaw;
+                if (keyValue) {
+                  // Bytes on chain hold the hex text as UTF-8; turn it back into text.
+                  wrapped = toText(keyValue.toHex?.() ?? keyValue.toJSON?.() ?? keyValue.toString?.());
+                }
               }
+              // Fallback: older pallets that keep the keys inside the envelope.
+              if (!wrapped) {
+                const encryptedKeysRaw = (json["encryptedKeys"] ?? json["encrypted_keys"]) as unknown;
+                if (Array.isArray(encryptedKeysRaw)) {
+                  const entry = (encryptedKeysRaw as unknown[]).find(
+                    (pair) => Array.isArray(pair) && String((pair as unknown[])[0]) === address,
+                  ) as unknown[] | undefined;
+                  wrapped = entry ? toText(entry[1]) : "";
+                }
+              }
+              if (!wrapped) throw new Error("No encrypted key found on chain for this account");
+              // Steps 2-4: RSA-unwrap the AES key with the local private key, then AES-decrypt the body.
+              decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
+            } catch (e) {
+              console.error("[numail] could not decrypt mail", mailId, e);
             }
+          } else if (incoming) {
+            console.warn("[numail] skipped decrypt", mailId, { hasLocalKey: !!myKeys, bodyLen: encryptedBody.length });
           }
-
 
           if (outgoing) {
             chainDelivery.push({ mailId, account: address, status: "Read", folder: "sent" });
