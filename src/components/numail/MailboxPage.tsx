@@ -190,7 +190,7 @@ export function MailboxPage() {
                         </span>
                       </div>
                       <p className={`mt-1 truncate text-sm ${unread ? "font-semibold" : ""}`}>
-                        {payload?.subject ?? `Encrypted subject ${row.mail.subjectHash.slice(0, 12)}…`}
+                        {payload?.subject ?? "Encrypted subject"}
                       </p>
                       <div className="mt-1.5 flex items-center gap-2">
                         <StatusBadge status={row.delivery.status} />
@@ -309,10 +309,6 @@ export function MailboxPage() {
                     {blockToDate(selectedRow.mail.block, ledger.block).toLocaleString()} · block #{selectedRow.mail.block}
                   </dd>
                 </div>
-                <div className="flex gap-2">
-                  <dt className="w-20 shrink-0">Subject hash</dt>
-                  <dd className="text-mono break-all">{selectedRow.mail.subjectHash}</dd>
-                </div>
                 {selectedRow.mail.postage ? (
                   <div className="flex gap-2">
                     <dt className="flex w-20 shrink-0 items-center gap-1">
@@ -363,7 +359,7 @@ export function MailboxPage() {
                             m.mailId === selectedRow.mail.mailId ? "font-semibold" : "text-muted-foreground hover:text-foreground"
                           }`}
                         >
-                          {ledger.payloads[m.mailId]?.subject ?? m.subjectHash} · {shortAddr(m.sender, 5)} · #{m.block}
+                          {ledger.payloads[m.mailId]?.subject ?? "Encrypted subject"} · {shortAddr(m.sender, 5)} · #{m.block}
                         </button>
                       </li>
                     ))}
