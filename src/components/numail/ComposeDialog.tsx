@@ -126,7 +126,7 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
         <DialogHeader>
           <DialogTitle>{threadParent ? "Reply" : "New mail"}</DialogTitle>
           <DialogDescription>
-            The subject and body are encrypted on this device; only their hash and reference go on chain.
+            The subject and body are encrypted on this device with the same key; only the ciphertext goes on chain.
           </DialogDescription>
         </DialogHeader>
 
