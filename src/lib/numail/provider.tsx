@@ -25,7 +25,6 @@ import {
   type LedgerState,
 } from "./ledger";
 import {
-  contentHash,
   encodeAttachments,
   encodePolicy,
   hasCall,
@@ -38,8 +37,8 @@ import { devAccount, type DevAccountName } from "./devAccounts";
 import {
   bytesToHex,
   chainPublicKeyToSpkiHex,
-  decryptBodyWithKey,
-  encryptBodyForRecipients,
+  decryptMailWithKey,
+  encryptMailForRecipients,
   ensureKeyPair,
   hexToBytes,
   loadKeyPair,
@@ -340,6 +339,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         const chainMail: LedgerState["mail"] = {};
         const chainDelivery: LedgerState["delivery"] = [];
         const decrypted: Record<string, string> = {};
+        const decryptedSubjects: Record<string, string> = {};
         const myKeys = loadKeyPair(address);
 
         for (const [key, raw] of entries as [AnyApi, AnyApi][]) {
@@ -353,7 +353,12 @@ export function NumailProvider({ children }: { children: ReactNode }) {
             ? (json["recipients"] as unknown[]).map(String)
             : [];
           const outgoing = sender === address;
-          const incoming = recipients.includes(address);
+          // When the sender wraps a copy of the AES key for themselves (see
+          // sendMail below), their own address ends up in the on-chain
+          // `recipients` list too, purely so encryptedKeys.len() matches
+          // recipients.len(). Treat that case as outgoing only, so the mail
+          // shows once in Sent, not a second time in Inbox.
+          const incoming = !outgoing && recipients.includes(address);
           if (!outgoing && !incoming) continue;
 
           const attachmentHashes = Array.isArray(json["attachments"])
@@ -398,7 +403,12 @@ export function NumailProvider({ children }: { children: ReactNode }) {
             return "";
           };
           const encryptedBody = toText(json["encryptedBody"] ?? json["encrypted_body"]);
-          if (incoming && myKeys && encryptedBody) {
+          const encryptedSubject = toText(json["encryptedSubject"] ?? json["encrypted_subject"]);
+          // Sent mail is decrypted the same way as received mail: the sender's
+          // own wrapped AES key is stored under their own address (see
+          // sendMail below), so mailEncryptedKeys(mailId, address) resolves
+          // for outgoing mail too.
+          if ((incoming || outgoing) && myKeys && encryptedBody) {
             try {
               // Step 1: read this recipient's wrapped AES key from the
               // dedicated storage map mailEncryptedKeys(mailId, account).
@@ -423,12 +433,15 @@ export function NumailProvider({ children }: { children: ReactNode }) {
                 }
               }
               if (!wrapped) throw new Error("No encrypted key found on chain for this account");
-              // Steps 2-4: RSA-unwrap the AES key with the local private key, then AES-decrypt the body.
-              decrypted[mailId] = await decryptBodyWithKey(encryptedBody, wrapped, myKeys.privateKeyBase64);
+              // Steps 2-4: RSA-unwrap the AES key with the local private key once,
+              // then AES-decrypt both the subject and the body with it.
+              const mail = await decryptMailWithKey(encryptedSubject, encryptedBody, wrapped, myKeys.privateKeyBase64);
+              decrypted[mailId] = mail.body;
+              if (mail.subject) decryptedSubjects[mailId] = mail.subject;
             } catch (e) {
               console.error("[numail] could not decrypt mail", mailId, e);
             }
-          } else if (incoming) {
+          } else if (incoming || outgoing) {
             console.warn("[numail] skipped decrypt", mailId, { hasLocalKey: !!myKeys, bodyLen: encryptedBody.length });
           }
 
@@ -465,7 +478,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           for (const id of Object.keys(chainMail)) {
             const existing = draft.payloads[id];
             const body = decrypted[id] ?? existing?.body ?? "";
-            if (existing || decrypted[id]) payloads[id] = { subject: existing?.subject ?? "Encrypted subject", body };
+            const subject = decryptedSubjects[id] ?? existing?.subject ?? "Encrypted subject";
+            if (existing || decrypted[id] || decryptedSubjects[id]) payloads[id] = { subject, body };
           }
           draft.payloads = payloads;
           const headNumber = Number(header?.number?.toString?.() ?? 0);
@@ -814,13 +828,28 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         // The outputs are text (base64 body, hex keys) — they go on chain
         // byte-for-byte as UTF-8, with no reformatting.
         const textToChainBytes = (text: string) => `0x${bytesToHex(new TextEncoder().encode(text))}`;
+        let encryptedSubjectHex = "0x";
         let encryptedBodyHex = "0x";
         let encryptedKeys: [string, string][] = [];
+        // The on-chain `recipients` list is what actually gets sent in the
+        // extrinsic. The pallet rejects the call unless
+        // encryptedKeys.len() === recipients.len() (EncryptedKeyCountMismatch),
+        // so to give the sender their own wrapped key, the sender's address
+        // must itself be included here as a recipient — there's no way to
+        // smuggle in an extra key/recipient pair otherwise.
+        let chainRecipients = input.recipients;
         if (onChain) {
+          const myKeys = loadKeyPair(address);
+          const wrapForSelf = !!myKeys && !input.recipients.includes(address);
+          if (wrapForSelf) chainRecipients = [...input.recipients, address];
           const pubKeys = await recipientPublicKeys(input.recipients);
-          const cipher = await encryptBodyForRecipients(input.body, pubKeys);
+          const allPubKeys = wrapForSelf ? [...pubKeys, myKeys!.publicKeyHex] : pubKeys;
+          // Subject and body are encrypted together under the same AES key,
+          // which is then wrapped once per recipient (see keys.ts).
+          const cipher = await encryptMailForRecipients(input.subject, input.body, allPubKeys);
+          encryptedSubjectHex = textToChainBytes(cipher.encryptedSubjectB64);
           encryptedBodyHex = textToChainBytes(cipher.encryptedBodyB64);
-          encryptedKeys = input.recipients.map((r, i) => [r, textToChainBytes(cipher.encryptedKeysHex[i] ?? "")]);
+          encryptedKeys = chainRecipients.map((r, i) => [r, textToChainBytes(cipher.encryptedKeysHex[i] ?? "")]);
         }
         const result = await run(
           "sendMail",
@@ -829,8 +858,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           },
           "Mail sent",
           () => [
-            input.recipients,
-            contentHash(input.subject),
+            chainRecipients,
+            encryptedSubjectHex,
             encryptedBodyHex,
             encryptedKeys,
             encodeAttachments(input.attachments),
