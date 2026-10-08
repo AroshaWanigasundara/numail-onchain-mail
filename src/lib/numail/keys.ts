@@ -229,31 +229,51 @@ function bufferSource(bytes: Uint8Array): ArrayBuffer {
 }
 
 export interface HybridCiphertext {
-  /** base64 text: 12-byte nonce ‖ ciphertext ‖ 16-byte GCM tag */
+  /** base64 text: 12-byte nonce ‖ ciphertext ‖ 16-byte GCM tag, for the subject */
+  encryptedSubjectB64: string;
+  /** base64 text: 12-byte nonce ‖ ciphertext ‖ 16-byte GCM tag, for the body */
   encryptedBodyB64: string;
   /** one RSA-OAEP wrapped AES key per recipient, hex text without 0x, same order */
   encryptedKeysHex: string[];
 }
 
+/** AES-256-GCM encrypt one piece of text under an already-generated key: nonce ‖ ct ‖ tag, base64. */
+async function aesEncryptText(subtle: SubtleCrypto, aesKey: CryptoKey, text: string): Promise<string> {
+  const nonce = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = new Uint8Array(
+    await subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, aesKey, new TextEncoder().encode(text)),
+  );
+  const combined = new Uint8Array(nonce.length + ciphertext.length);
+  combined.set(nonce, 0);
+  combined.set(ciphertext, nonce.length);
+  return toBase64(bufferSource(combined));
+}
+
+/** Inverse of aesEncryptText. */
+async function aesDecryptText(subtle: SubtleCrypto, aesKey: CryptoKey, b64: string): Promise<string> {
+  const all = fromBase64(b64);
+  const nonce = all.slice(0, 12);
+  const payload = all.slice(12);
+  const plain = await subtle.decrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, aesKey, bufferSource(payload));
+  return new TextDecoder().decode(plain);
+}
+
 /**
- * 1) random AES-256 key, 2) AES-256-GCM over the body (nonce ‖ ct ‖ tag),
- * 3) the AES key wrapped with each recipient's RSA-4096 public key (SPKI).
- * Outputs are text (base64 body, hex keys) — they go on chain as UTF-8 bytes
+ * 1) random AES-256 key, 2) AES-256-GCM over the subject and the body
+ * separately, under the SAME key (nonce ‖ ct ‖ tag each), 3) that one AES
+ * key wrapped with each recipient's RSA-4096 public key (SPKI). Outputs are
+ * text (base64 subject/body, hex keys) — they go on chain as UTF-8 bytes
  * exactly as produced, with no further reformatting.
  */
-export async function encryptBodyForRecipients(
+export async function encryptMailForRecipients(
+  subject: string,
   body: string,
   recipientPublicKeysHex: string[],
 ): Promise<HybridCiphertext> {
   const subtle = subtleOrThrow();
   const aesKey = await subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
-  const nonce = globalThis.crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = new Uint8Array(
-    await subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, aesKey, new TextEncoder().encode(body)),
-  );
-  const combined = new Uint8Array(nonce.length + ciphertext.length);
-  combined.set(nonce, 0);
-  combined.set(ciphertext, nonce.length);
+  const encryptedSubjectB64 = await aesEncryptText(subtle, aesKey, subject);
+  const encryptedBodyB64 = await aesEncryptText(subtle, aesKey, body);
 
   const rawAesKey = new Uint8Array(await subtle.exportKey("raw", aesKey));
   const encryptedKeysHex: string[] = [];
@@ -269,19 +289,21 @@ export async function encryptBodyForRecipients(
     encryptedKeysHex.push(bytesToHex(wrapped));
   }
 
-  return { encryptedBodyB64: toBase64(bufferSource(combined)), encryptedKeysHex };
+  return { encryptedSubjectB64, encryptedBodyB64, encryptedKeysHex };
 }
 
 /**
- * Recipient-side: unwrap the AES key with the private key, then decrypt the
- * body. `encryptedBodyB64` is the base64 text stored on chain;
- * `encryptedKeyHex` is the hex text stored on chain (0x prefix tolerated).
+ * Recipient-side: unwrap the AES key with the private key once, then use it
+ * to decrypt both the subject and the body. `encryptedSubjectB64` /
+ * `encryptedBodyB64` are the base64 text stored on chain; `encryptedKeyHex`
+ * is the hex text stored on chain (0x prefix tolerated).
  */
-export async function decryptBodyWithKey(
+export async function decryptMailWithKey(
+  encryptedSubjectB64: string,
   encryptedBodyB64: string,
   encryptedKeyHex: string,
   privateKeyBase64: string,
-): Promise<string> {
+): Promise<{ subject: string; body: string }> {
   const subtle = subtleOrThrow();
   const priv = await subtle.importKey(
     "pkcs8",
@@ -292,13 +314,7 @@ export async function decryptBodyWithKey(
   );
   const rawAesKey = await subtle.decrypt({ name: "RSA-OAEP" }, priv, bufferSource(hexToBytes(encryptedKeyHex)));
   const aesKey = await subtle.importKey("raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]);
-  const all = fromBase64(encryptedBodyB64);
-  const nonce = all.slice(0, 12);
-  const payload = all.slice(12);
-  const plain = await subtle.decrypt(
-    { name: "AES-GCM", iv: nonce, tagLength: 128 },
-    aesKey,
-    bufferSource(payload),
-  );
-  return new TextDecoder().decode(plain);
+  const subject = encryptedSubjectB64 ? await aesDecryptText(subtle, aesKey, encryptedSubjectB64) : "";
+  const body = await aesDecryptText(subtle, aesKey, encryptedBodyB64);
+  return { subject, body };
 }
