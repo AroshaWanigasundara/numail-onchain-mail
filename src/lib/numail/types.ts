@@ -139,4 +139,6 @@ export const PALLET_ERRORS: Record<string, string> = {
   EncryptedKeyCountMismatch: "Each recipient needs their own encrypted key — please retry sending.",
   EncryptedKeyRecipientMismatch: "An encrypted key did not match a recipient of this mail.",
   RecipientPolicyRefused: "The recipient's acceptance policy refused this mail (contacts-only or trust score).",
+  RequireSudo: "Only the chain's sudo account can send system notices.",
+  BadOrigin: "Only the chain's sudo account can send system notices.",
 };
