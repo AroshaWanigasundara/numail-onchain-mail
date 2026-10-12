@@ -104,15 +104,23 @@ export async function submitExtrinsic(
   source: string,
   method: string,
   args: unknown[],
-  /** when set, sign with the in-browser dev keypair (//Alice etc.) instead of an extension */
   devName?: string,
 ): Promise<SubmitResult> {
   if (!hasCall(api, method)) {
     throw new Error(`This node does not expose nuMail.${method}`);
   }
   const tx = palletTx(api)[method](...args);
+  return signAndSubmitTx(api, tx, address, source, devName);
+}
 
-  // Dev accounts (//Alice, //Bob, …) sign directly with a keypair — no extension.
+/** Signs and submits an already-built extrinsic, resolving once it is in a block. */
+export async function signAndSubmitTx(
+  api: AnyApi,
+  tx: AnyApi,
+  address: string,
+  source: string,
+  devName?: string,
+): Promise<SubmitResult> {
   let pair: import("@polkadot/keyring/types").KeyringPair | null = null;
   let extensionSigner: unknown = null;
   if (source === "dev" && devName) {
@@ -127,23 +135,34 @@ export async function submitExtrinsic(
   return await new Promise<SubmitResult>((resolve, reject) => {
     let unsub: (() => void) | undefined;
     const onStatus = (result: AnyApi) => {
-        const { status, dispatchError, events, txHash } = result;
-        if (dispatchError) {
+      const { status, dispatchError, events, txHash } = result;
+      if (dispatchError) {
+        unsub?.();
+        reject(new Error(decodeDispatchError(api, dispatchError)));
+        return;
+      }
+      if (status?.isInBlock || status?.isFinalized) {
+        // sudo.sudo(...) reports the INNER call's outcome in a Sudid event,
+        // not as a dispatchError on the outer extrinsic.
+        const sudid = (events ?? []).find(
+          (e: AnyApi) => e.event?.section === "sudo" && e.event?.method === "Sudid",
+        );
+        const inner = sudid?.event?.data?.[0];
+        if (inner?.isErr) {
           unsub?.();
-          reject(new Error(decodeDispatchError(api, dispatchError)));
+          reject(new Error(decodeDispatchError(api, inner.asErr)));
           return;
         }
-        if (status?.isInBlock || status?.isFinalized) {
-          const blockHash = (status.isInBlock ? status.asInBlock : status.asFinalized).toString();
-          const numailEvents = (events ?? [])
-            .filter((e: AnyApi) => /^numail$/i.test(String(e.event?.section)))
-            .map((e: AnyApi) => ({
-              method: String(e.event.method),
-              data: e.event.data.map((d: AnyApi) => d.toString()),
-            }));
-          unsub?.();
-          resolve({ txHash: txHash.toString(), blockHash, events: numailEvents });
-        }
+        const blockHash = (status.isInBlock ? status.asInBlock : status.asFinalized).toString();
+        const numailEvents = (events ?? [])
+          .filter((e: AnyApi) => /^numail$/i.test(String(e.event?.section)))
+          .map((e: AnyApi) => ({
+            method: String(e.event.method),
+            data: e.event.data.map((d: AnyApi) => d.toString()),
+          }));
+        unsub?.();
+        resolve({ txHash: txHash.toString(), blockHash, events: numailEvents });
+      }
     };
     const sendPromise: Promise<() => void> = pair
       ? tx.signAndSend(pair, onStatus)
@@ -154,6 +173,45 @@ export async function submitExtrinsic(
       })
       .catch((e: unknown) => reject(e instanceof Error ? e : new Error(String(e))));
   });
+}
+
+/**
+ * system_notice needs Root, so it is wrapped in sudo.sudo(...) and signed by
+ * the chain's sudo key. That key is matched against the built-in dev accounts
+ * (Alice on your dev genesis); failing that, the connected account is used
+ * if it happens to be the sudo key.
+ */
+export async function submitSystemNotice(
+  api: AnyApi,
+  args: unknown[],
+  current?: { address: string; source: string; devName?: string | undefined },
+): Promise<SubmitResult> {
+  if (!hasCall(api, "systemNotice")) throw new Error("This node does not expose nuMail.systemNotice");
+  if (!api?.tx?.sudo?.sudo || !api?.query?.sudo?.key) throw new Error("This runtime has no sudo pallet");
+
+  const opt = await api.query.sudo.key();
+  const sudoKey = typeof opt?.isSome === "boolean" ? (opt.isSome ? opt.unwrap() : null) : opt;
+  if (!sudoKey) throw new Error("This chain has no sudo key set");
+
+  const { u8aEq } = await import("@polkadot/util");
+  const { DEV_ACCOUNT_NAMES, devPair } = await import("./devAccounts");
+  let signer: { address: string; source: string; devName?: string } | null = null;
+  for (const name of DEV_ACCOUNT_NAMES) {
+    const pair = await devPair(name);
+    if (u8aEq(pair.publicKey, sudoKey.toU8a())) {
+      signer = { address: pair.address, source: "dev", devName: name };
+      break;
+    }
+  }
+  if (!signer && current && u8aEq(api.createType("AccountId", current.address).toU8a(), sudoKey.toU8a())) {
+    signer = { address: current.address, source: current.source, ...(current.devName ? { devName: current.devName } : {}) };
+  }
+  if (!signer) {
+    throw new Error(`system_notice must be signed by the sudo account (${sudoKey.toString()}), which is not a built-in dev account.`);
+  }
+
+  const tx = api.tx.sudo.sudo(palletTx(api).systemNotice(...args));
+  return signAndSubmitTx(api, tx, signer.address, signer.source, signer.devName);
 }
 
 /**
