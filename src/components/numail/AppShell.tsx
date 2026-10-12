@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Archive,
+  BellRing,
   Copy,
   Folder,
   Inbox,
@@ -33,6 +34,7 @@ import { CreateMailboxCard } from "./CreateMailboxCard";
 import { NetworkSettings } from "./NetworkSettings";
 import { ConnectionBadge } from "./ConnectionBadge";
 import { shortAddr } from "./shared";
+import { SystemNoticeDialog } from "./SystemNoticeDialog";
 
 const folderIcon = (name: string) => {
   if (name === "inbox") return Inbox;
@@ -149,7 +151,8 @@ function SidebarBody({
 }
 
 function ConnectWalletScreen() {
-  const { connectWallet, useDemoAccount, useDevAccount, walletError } = useNumail();
+  const { connectWallet, useDemoAccount, useDevAccount, walletError, status, palletAvailable } = useNumail();
+  const [noticeOpen, setNoticeOpen] = useState(false);  
   return (
     <div className="mx-auto w-full max-w-md surface-panel p-8 text-center">
       <div className="brand-gradient mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
@@ -191,6 +194,26 @@ function ConnectWalletScreen() {
           ))}
         </div>
       </div>
+
+      <div className="mt-6 border-t border-border pt-4 text-left">
+        <p className="text-xs font-medium">Developer tools</p>
+        <p className="mt-0.5 mb-2 text-[11px] text-muted-foreground">
+          Send a privileged system notice (signed with the sudo key). No wallet needed.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          disabled={status !== "connected" || !palletAvailable}
+          onClick={() => setNoticeOpen(true)}
+        >
+          <BellRing className="h-4 w-4" />
+          Test system notice
+        </Button>
+      </div>
+
+      <SystemNoticeDialog open={noticeOpen} onOpenChange={setNoticeOpen} />
+      
     </div>
   );
 }
