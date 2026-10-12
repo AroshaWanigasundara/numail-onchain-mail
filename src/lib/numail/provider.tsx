@@ -31,6 +31,7 @@ import {
   hasPallet,
   mailIdFromEvents,
   submitExtrinsic,
+  submitSystemNotice,
   type AnyApi,
 } from "./chain";
 import { devAccount, type DevAccountName } from "./devAccounts";
@@ -94,6 +95,13 @@ interface NumailContextValue {
       attachments: Attachment[];
       threadParent?: string | undefined;
       postage?: number | undefined;
+    }) => Promise<string | null>;
+        systemNotice: (input: {
+      sender: string;
+      recipients: string[];
+      subject: string;
+      body: string;
+      threadParent?: string | undefined;
     }) => Promise<string | null>;
     markRead: (mailId: string) => Promise<void>;
     moveToFolder: (mailId: string, folder: string) => Promise<void>;
@@ -877,6 +885,55 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         }
         return id;
       },
+            systemNotice: async (input) => {
+        if (status !== "connected" || !palletAvailable) {
+          throw new Error("Connect to a node that has pallet-numail first");
+        }
+        const api = apiRef.current as AnyApi;
+        if (!hasCall(api, "systemNotice")) throw new Error("This node does not expose nuMail.systemNotice");
+
+        setBusy("system_notice");
+        try {
+          const textToChainBytes = (text: string) => `0x${bytesToHex(new TextEncoder().encode(text))}`;
+          // Same hybrid encryption as sendMail: one AES key for subject+body,
+          // wrapped once per recipient. The chain needs exactly one key per
+          // recipient, so the sender is NOT added.
+          const pubKeys = await recipientPublicKeys(input.recipients);
+          const cipher = await encryptMailForRecipients(input.subject, input.body, pubKeys);
+          const encryptedKeys: [string, string][] = input.recipients.map((r, i) => [
+            r,
+            textToChainBytes(cipher.encryptedKeysHex[i] ?? ""),
+          ]);
+
+          let result;
+          try {
+            result = await submitSystemNotice(
+              api,
+              [
+                input.sender,
+                input.recipients,
+                textToChainBytes(cipher.encryptedSubjectB64),
+                textToChainBytes(cipher.encryptedBodyB64),
+                encryptedKeys,
+                input.threadParent && /^\d+$/.test(input.threadParent) ? Number(input.threadParent) : null,
+              ],
+              account && account.source !== "demo" ? account : undefined,
+            );
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            const code = msg.split(".").pop() ?? msg;
+            toast.error("System notice failed", { description: humanError(code) || msg });
+            throw new Error(msg);
+          }
+          toast.success("System notice sent", {
+            description: `In block ${result.blockHash?.slice(0, 10)}… · tx ${result.txHash.slice(0, 10)}…`,
+          });
+          if (account && account.source !== "demo") await syncMailFromChain(account.address);
+          return mailIdFromEvents(result);
+        } finally {
+          setBusy(null);
+        }
+      },
       markRead: async (mailId) => {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
@@ -927,7 +984,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success("Local NuMail state cleared");
       },
     }),
-    [run, account, onChain, chainFolderBytes, recipientPublicKeys, persist, syncAccountFromChain, syncMailFromChain],
+    [run, account, onChain, chainFolderBytes, recipientPublicKeys, persist, syncAccountFromChain, syncMailFromChain, status, palletAvailable],
   );
 
   const value: NumailContextValue = {
