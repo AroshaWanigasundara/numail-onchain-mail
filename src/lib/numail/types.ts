@@ -73,6 +73,7 @@ export const CONSTANTS = {
   MaxThreadDepth: 64,
   MaxBlocklist: 128,
   BlockTimeSeconds: 6,
+  MaxFolderNameBytes: 32,   // runtime MaxFolderNameLen
 } as const;
 
 export const DEFAULT_FOLDERS = ["inbox", "sent", "archive"];
@@ -141,4 +142,11 @@ export const PALLET_ERRORS: Record<string, string> = {
   RecipientPolicyRefused: "The recipient's acceptance policy refused this mail (contacts-only or trust score).",
   RequireSudo: "Only the chain's sudo account can send system notices.",
   BadOrigin: "Only the chain's sudo account can send system notices.",
+  EmptyFolderName: "Folder name cannot be empty.",
+  FolderAlreadyExists: "You already have a folder with that name.",
+  FolderNotFound: "That folder does not exist in your mailbox.",
+  FolderNotEmpty: "This folder still contains mail. Move or delete its mail first.",
+  ProtectedFolder: "Inbox, sent and archive are required and cannot be deleted.",
+  TooManyFolders: "Your mailbox has reached its maximum number of folders.",
+  FolderNameTooLong: "That folder name is too long.",
 };
