@@ -88,6 +88,7 @@ interface NumailContextValue {
     createMailbox: (p: MailboxPolicy, retention: number | undefined, folders: string[]) => Promise<void>;
     setPolicy: (p: MailboxPolicy, retention: number | undefined) => Promise<void>;
     addFolder: (name: string) => Promise<void>;
+    deleteFolder: (name: string) => Promise<void>;   // NEW
     sendMail: (input: {
       recipients: string[];
       subject: string;
@@ -123,6 +124,8 @@ const DEMO_ACCOUNT: WalletAccount = {
 function humanError(code: string) {
   return PALLET_ERRORS[code] ?? code.replace(/([A-Z])/g, " $1").trim();
 }
+
+const folderToBytes = (name: string) => `0x${bytesToHex(new TextEncoder().encode(name))}`;
 
 export function NumailProvider({ children }: { children: ReactNode }) {
   const [endpoint, setEndpointState] = useState<string | null>(null);
@@ -825,7 +828,25 @@ export function NumailProvider({ children }: { children: ReactNode }) {
       addFolder: async (name) => {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
-        await run("addFolder", (d) => ledgerOps.addFolder(d, address, name), `Folder "${name}" added`);
+        await run(
+          "createFolder",
+          (d) => ledgerOps.addFolder(d, address, name),
+          `Folder "${name}" added`,
+          () => [folderToBytes(name)],
+        );
+        // chain is the source of truth for real signers: re-read the folder list
+        if (account.source !== "demo") await syncAccountFromChain(address);
+      },
+      deleteFolder: async (name) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        await run(
+          "deleteFolder",
+          (d) => ledgerOps.removeFolder(d, address, name),
+          `Folder "${name}" deleted`,
+          () => [folderToBytes(name)],
+        );
+        if (account.source !== "demo") await syncAccountFromChain(address);
       },
       sendMail: async (input) => {
         const address = account?.address;
