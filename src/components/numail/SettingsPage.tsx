@@ -17,10 +17,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Copy, Download, Eye, EyeOff, Loader2, Plus, ShieldOff, Trash2 } from "lucide-react";
+import { Copy, Download, Eye, EyeOff, Loader2, Plus, ShieldOff, Trash2, X } from "lucide-react";
 import { loadKeyPair, privateKeyPem, publicKeyPem, type NumailKeyPair } from "@/lib/numail/keys";
 import { useEffect } from "react";
-import { CONSTANTS, type MailboxPolicy, type PolicyKind } from "@/lib/numail/types";
+import { CONSTANTS, DEFAULT_FOLDERS, type MailboxPolicy, type PolicyKind } from "@/lib/numail/types";
 import { useNumail } from "@/lib/numail/provider";
 import { GLOSSARY, Hint, policyLabel, shortAddr } from "./shared";
 
@@ -38,6 +38,14 @@ export function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [keys, setKeys] = useState<NumailKeyPair | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
+  const folderName = newFolder.trim().toLowerCase();
+  const folderNameError = !folderName
+    ? null
+    : new TextEncoder().encode(folderName).length > CONSTANTS.MaxFolderNameBytes
+      ? `Folder names are limited to ${CONSTANTS.MaxFolderNameBytes} bytes.`
+      : mailbox?.folders.includes(folderName)
+        ? "You already have a folder with that name."
+        : null;
 
   useEffect(() => {
     setKeys(account ? loadKeyPair(account.address) : null);
@@ -126,8 +134,18 @@ export function SettingsPage() {
               <h2 className="text-lg font-semibold">Folders</h2>
               <div className="flex flex-wrap gap-1.5">
                 {(mailbox?.folders ?? []).map((f) => (
-                  <Badge key={f} variant="secondary" className="capitalize">
+                  <Badge key={f} variant="secondary" className="gap-1 capitalize">
                     {f}
+                    {!DEFAULT_FOLDERS.includes(f) && (
+                      <button
+                        type="button"
+                        aria-label={`Delete folder ${f}`}
+                        disabled={busy !== null}
+                        onClick={() => void actions.deleteFolder(f).catch(() => undefined)}
+                      >
+                        {busy === "deleteFolder" ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                      </button>
+                    )}
                   </Badge>
                 ))}
               </div>
@@ -135,22 +153,29 @@ export function SettingsPage() {
                 <Input
                   value={newFolder}
                   placeholder="New folder name"
+                  maxLength={CONSTANTS.MaxFolderNameBytes}
                   onChange={(e) => setNewFolder(e.target.value)}
                 />
                 <Button
                   variant="secondary"
-                  disabled={busy !== null || !newFolder.trim()}
+                  disabled={busy !== null || !folderName || Boolean(folderNameError)}
                   onClick={async () => {
-                    await actions.addFolder(newFolder.trim().toLowerCase()).catch(() => undefined);
-                    setNewFolder("");
+                    try {
+                      await actions.addFolder(folderName);
+                      setNewFolder("");
+                    } catch {
+                      /* the provider already showed the error toast */
+                    }
                   }}
                 >
-                  <Plus className="h-4 w-4" />
+                  {busy === "createFolder" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   Add folder
                 </Button>
               </div>
+              {folderNameError && <p className="text-xs text-destructive">{folderNameError}</p>}
               <p className="text-xs text-muted-foreground">
-                {(mailbox?.folders.length ?? 0)} of {CONSTANTS.MaxFolders} folders declared.
+                {mailbox?.folders.length ?? 0} of {CONSTANTS.MaxFolders} folders declared. Inbox, sent and archive are
+                required. A folder can only be deleted when it holds no mail.
               </p>
             </div>
           </TabsContent>
