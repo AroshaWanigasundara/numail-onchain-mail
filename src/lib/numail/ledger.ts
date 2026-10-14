@@ -130,8 +130,20 @@ export const ledgerOps = {
   addFolder(state: LedgerState, owner: string, folder: string) {
     const mb = state.mailboxes[owner];
     if (!mb) throw new LedgerError("MailboxNotFound");
-    if (mb.folders.length >= CONSTANTS.MaxFolders) throw new LedgerError("FolderFull");
-    if (!mb.folders.includes(folder)) mb.folders.push(folder);
+    if (mb.folders.includes(folder)) throw new LedgerError("FolderAlreadyExists");
+    if (mb.folders.length >= CONSTANTS.MaxFolders) throw new LedgerError("TooManyFolders");
+    mb.folders.push(folder);
+  },
+
+  removeFolder(state: LedgerState, owner: string, folder: string) {
+    const mb = state.mailboxes[owner];
+    if (!mb) throw new LedgerError("MailboxNotFound");
+    if (DEFAULT_FOLDERS.includes(folder)) throw new LedgerError("ProtectedFolder");
+    if (!mb.folders.includes(folder)) throw new LedgerError("FolderNotFound");
+    if (state.delivery.some((d) => d.account === owner && d.folder === folder && d.status !== "Tombstoned")) {
+      throw new LedgerError("FolderNotEmpty");
+    }
+    mb.folders = mb.folders.filter((f) => f !== folder);
   },
 
   sendMail(
