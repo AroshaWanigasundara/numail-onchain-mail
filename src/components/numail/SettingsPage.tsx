@@ -17,12 +17,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Copy, Download, Eye, EyeOff, Loader2, Plus, ShieldOff, Trash2, X } from "lucide-react";
+import { Copy, Download, Eye, EyeOff, Loader2, Lock, Plus, ShieldOff, Trash2, Upload, X } from "lucide-react";
 import { loadKeyPair, privateKeyPem, publicKeyPem, type NumailKeyPair } from "@/lib/numail/keys";
 import { useEffect } from "react";
 import { CONSTANTS, DEFAULT_FOLDERS, type MailboxPolicy, type PolicyKind } from "@/lib/numail/types";
 import { useNumail } from "@/lib/numail/provider";
 import { GLOSSARY, Hint, policyLabel, shortAddr } from "./shared";
+import { ExportKeyDialog, ImportKeyDialog } from "./KeyBackupDialogs";
 
 export function SettingsPage() {
   const { ledger, account, actions, busy, balance } = useNumail();
@@ -38,6 +39,8 @@ export function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [keys, setKeys] = useState<NumailKeyPair | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const folderName = newFolder.trim().toLowerCase();
   const folderNameError = !folderName
     ? null
@@ -247,15 +250,22 @@ export function SettingsPage() {
             <div className="surface-panel space-y-3 p-5">
               <h2 className="text-lg font-semibold">Encryption keys</h2>
               {!keys ? (
-                <p className="text-sm text-muted-foreground">
-                  No key on this device yet. A RSA-4096 key is generated when you create your mailbox; its public part is
-                  stored on chain.
-                </p>
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {mailbox
+                      ? "This mailbox was created on another device, so its private key isn't here yet. Import your key backup to read your mail and send encrypted mail from this device."
+                      : "No key on this device yet. A RSA-4096 key is generated when you create your mailbox; its public part is stored on chain. If you already have a key backup, import it first."}
+                  </p>
+                  <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                    <Upload className="h-4 w-4" />
+                    Import key
+                  </Button>
+                </>
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    RSA-4096 key created {new Date(keys.createdAt).toLocaleString()}. The private key never leaves this
-                    browser — keep a backup somewhere safe.
+                    RSA-4096 key created {new Date(keys.createdAt).toLocaleString()}. The private key stays in this
+                    browser — export an encrypted backup to use the same key on another device.
                   </p>
                   <div className="space-y-1">
                     <Label>Public key (on chain)</Label>
@@ -302,7 +312,15 @@ export function SettingsPage() {
                       }}
                     >
                       <Download className="h-4 w-4" />
-                      Download
+                      Download PEM (unencrypted)
+                    </Button>
+                    <Button variant="secondary" onClick={() => setExportOpen(true)}>
+                      <Lock className="h-4 w-4" />
+                      Export encrypted backup
+                    </Button>
+                    <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                      <Upload className="h-4 w-4" />
+                      Import key
                     </Button>
                   </div>
                 </>
@@ -350,6 +368,21 @@ export function SettingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {account && (
+        <>
+          {keys && (
+            <ExportKeyDialog open={exportOpen} onOpenChange={setExportOpen} address={account.address} pair={keys} />
+          )}
+          <ImportKeyDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+            address={account.address}
+            hasKey={Boolean(keys)}
+            onImported={() => setKeys(loadKeyPair(account.address))}
+          />
+        </>
+      )}
     </AppShell>
   );
 }
