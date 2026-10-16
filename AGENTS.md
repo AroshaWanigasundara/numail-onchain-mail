@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep NuMail screen layouts intrinsically shrinkable; use grid/min-w-0 for mixed control rows and shared viewport-bounded dialog sizing so every device can access the same actions.

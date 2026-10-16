@@ -101,15 +101,15 @@ export function DeliveryReceipts({ mail }: { mail: MailEnvelope }) {
 
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-border bg-card" aria-label="Delivery status">
-      <header className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        <h3 className="flex items-center gap-1.5 text-sm font-medium">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border px-4 py-2.5">
+        <h3 className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
           Delivery status
           <Hint>
             Read straight from the chain. Delivered means the mail is in the recipient's mailbox. Read means they opened
             it; mail they have since archived or deleted also counts as read.
           </Hint>
         </h3>
-        <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {live ? (
             <span className="flex items-center gap-1.5">
               <span className="relative flex h-2 w-2">

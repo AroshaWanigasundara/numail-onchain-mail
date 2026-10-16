@@ -193,27 +193,27 @@ export function MailboxPage() {
   return (
     <AppShell activeFolder={folder} onSelectFolder={setFolder}>
       {missingKey && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm">
           <KeyRound className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1">
             This device doesn't have your encryption key, so your mail can't be decrypted. Import your key backup to
             continue.
           </span>
-          <Button asChild size="sm" variant="outline">
+          <Button asChild size="sm" variant="outline" className="col-start-2 w-fit">
             <Link to="/settings">Import key</Link>
           </Button>
         </div>
       )}
-      <div className="grid min-h-[calc(100vh-3.5rem)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+      <div className="grid min-h-[calc(100dvh-3.5rem)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         {/* list */}
-        <section className={`border-r border-border ${selectedRow ? "hidden xl:block" : ""}`} aria-label="Mail list">
+        <section className={`min-w-0 border-r border-border ${selectedRow ? "hidden xl:block" : ""}`} aria-label="Mail list">
           <div className="space-y-3 border-b border-border p-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
               <h1 className={`truncate text-lg font-semibold ${activeArchive ? "" : "capitalize"}`}>
                 {activeArchive ? activeArchive.name : folder}
               </h1>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">{filtered.length} item(s)</span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="hidden text-xs text-muted-foreground sm:inline">{filtered.length} item(s)</span>
                 {activeArchive && (
                   <>
                     <Button
@@ -241,9 +241,9 @@ export function MailboxPage() {
                 aria-label="Search mail"
               />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Select value={readFilter} onValueChange={setReadFilter}>
-                <SelectTrigger className="w-36" aria-label="Read status filter">
+                <SelectTrigger className="col-span-2 w-full min-w-0 sm:col-span-1" aria-label="Read status filter">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -252,13 +252,13 @@ export function MailboxPage() {
                   <SelectItem value="read">Read</SelectItem>
                 </SelectContent>
               </Select>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" aria-label="From date" />
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" aria-label="To date" />
+              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full min-w-0" aria-label="From date" />
+              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full min-w-0" aria-label="To date" />
             </div>
           </div>
 
           {pageRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 p-16 text-center text-muted-foreground">
+            <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center text-muted-foreground">
               <Inbox className="h-8 w-8" />
               <p className="text-sm">No mail in this folder.</p>
             </div>
@@ -322,21 +322,21 @@ export function MailboxPage() {
         </section>
 
         {/* detail */}
-        <section className={selectedRow ? "" : "hidden xl:block"} aria-label="Mail detail">
+        <section className={selectedRow ? "min-w-0" : "hidden min-w-0 xl:block"} aria-label="Mail detail">
           {!selectedRow ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-16 text-center text-muted-foreground">
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-4 py-16 text-center text-muted-foreground">
               <MailOpen className="h-8 w-8" />
               <p className="text-sm">Select a mail item to read it.</p>
             </div>
           ) : (
             <article className="p-4 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap">
                 <Button variant="ghost" size="sm" className="xl:hidden" onClick={() => setSelected(null)}>
                   <ArrowLeft className="h-4 w-4" />
                   Back
                 </Button>
                 <StatusBadge status={selectedRow.delivery.status} />
-                <div className="ml-auto flex flex-wrap gap-1.5">
+                <div className="col-span-2 flex min-w-0 flex-wrap gap-1.5 sm:ml-auto">
                   {!arch && selectedRow.delivery.status === "Delivered" && (
                     <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void actions.markRead(selectedRow.mail.mailId)}>
                       <CheckCheck className="h-4 w-4" />
@@ -439,17 +439,17 @@ export function MailboxPage() {
                 </p>
               )}
 
-              <h2 className="mt-4 text-xl font-semibold tracking-tight">
+              <h2 className="mt-4 text-xl font-semibold wrap-anywhere">
                 {payloadFor(ledger, selectedRow)?.subject ?? "Encrypted subject"}
               </h2>
               <dl className="mt-3 grid gap-1 text-xs text-muted-foreground">
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0">From</dt>
-                  <dd className="text-mono break-all">{selectedRow.mail.sender}</dd>
+                  <dd className="text-mono min-w-0 break-all">{selectedRow.mail.sender}</dd>
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0">To</dt>
-                  <dd className="text-mono break-all">
+                  <dd className="text-mono min-w-0 break-all">
                     {selectedRow.mail.recipients
                       .filter((r) => r !== selectedRow.mail.sender || selectedRow.mail.recipients.length === 1)
                       .map((r) => shortAddr(r, 8))
@@ -476,7 +476,7 @@ export function MailboxPage() {
                 <DeliveryReceipts key={selectedRow.mail.mailId} mail={selectedRow.mail} />
               )}
 
-              <div className="mt-5 rounded-lg border border-border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
+              <div className="mt-5 rounded-lg border border-border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap wrap-anywhere">
                 {payloadFor(ledger, selectedRow)?.body ?? (
                   <span className="text-muted-foreground italic">Encrypted for another device</span>
                 )}
@@ -490,7 +490,7 @@ export function MailboxPage() {
                   {selectedRow.mail.attachments.map((a) => (
                     <div key={a.cid} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
                       <Paperclip className="h-4 w-4 text-muted-foreground" />
-                      <span className="flex-1 truncate">{a.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{a.name}</span>
                       <span className="text-xs text-muted-foreground">{Math.round(a.size / 1024)} KB</span>
                       <Badge variant="outline" className="border-success/40 bg-success/10 text-[10px] text-success">
                         anchored
@@ -509,7 +509,7 @@ export function MailboxPage() {
                         <button
                           type="button"
                           onClick={() => setSelected(m.mailId)}
-                          className={`text-left text-xs ${
+                          className={`max-w-full text-left text-xs wrap-anywhere ${
                             m.mailId === selectedRow.mail.mailId ? "font-semibold" : "text-muted-foreground hover:text-foreground"
                           }`}
                         >

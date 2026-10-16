@@ -71,7 +71,7 @@ export function SettingsPage() {
         </div>
 
         <Tabs defaultValue="network">
-          <TabsList className="flex-wrap">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
             <TabsTrigger value="network">Network</TabsTrigger>
             <TabsTrigger value="mailbox">Mailbox</TabsTrigger>
             <TabsTrigger value="blocklist">Blocklist</TabsTrigger>
@@ -79,14 +79,14 @@ export function SettingsPage() {
           </TabsList>
 
           <TabsContent value="network" className="mt-4">
-            <div className="surface-panel p-5">
+            <div className="surface-panel p-4 sm:p-5">
               <h2 className="mb-4 text-lg font-semibold">Network settings</h2>
               <NetworkSettings />
             </div>
           </TabsContent>
 
           <TabsContent value="mailbox" className="mt-4 space-y-4">
-            <div className="surface-panel space-y-4 p-5">
+            <div className="surface-panel space-y-4 p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Acceptance policy</h2>
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5">
@@ -133,11 +133,11 @@ export function SettingsPage() {
               <p className="text-xs text-muted-foreground">Current on-chain policy: {mailbox ? policyLabel(mailbox.policy) : "—"}</p>
             </div>
 
-            <div className="surface-panel space-y-3 p-5">
+            <div className="surface-panel space-y-3 p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Folders</h2>
               <div className="flex flex-wrap gap-1.5">
                 {(mailbox?.folders ?? []).map((f) => (
-                  <Badge key={f} variant="secondary" className="gap-1 capitalize">
+                  <Badge key={f} variant="secondary" className="max-w-full gap-1 whitespace-normal wrap-anywhere capitalize">
                     {f}
                     {!DEFAULT_FOLDERS.includes(f) && (
                       <button
@@ -152,7 +152,7 @@ export function SettingsPage() {
                   </Badge>
                 ))}
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <Input
                   value={newFolder}
                   placeholder="New folder name"
@@ -184,9 +184,9 @@ export function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="blocklist" className="mt-4">
-            <div className="surface-panel space-y-4 p-5">
+            <div className="surface-panel space-y-4 p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Blocked senders</h2>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <Input
                   value={blockInput}
                   spellCheck={false}
@@ -212,7 +212,7 @@ export function SettingsPage() {
                 <ul className="divide-y divide-border rounded-md border border-border">
                   {blocklist.map((addr) => (
                     <li key={addr} className="flex items-center gap-2 px-3 py-2 text-sm">
-                      <span className="text-mono flex-1 truncate">{addr}</span>
+                      <span className="text-mono min-w-0 flex-1 truncate">{addr}</span>
                       <Button size="sm" variant="ghost" onClick={() => void actions.unblockSender(addr)}>
                         Unblock
                       </Button>
@@ -227,27 +227,27 @@ export function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="account" className="mt-4 space-y-4">
-            <div className="surface-panel space-y-2 p-5 text-sm">
+            <div className="surface-panel space-y-2 p-4 sm:p-5 text-sm">
               <h2 className="mb-2 text-lg font-semibold">Account</h2>
-              <div className="flex justify-between gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3 [&>span:last-child]:text-right [&>span:last-child]:wrap-anywhere">
                 <span className="text-muted-foreground">Address</span>
                 <span className="text-mono break-all text-right">{account ? shortAddr(account.address, 10) : "—"}</span>
               </div>
-              <div className="flex justify-between gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3 [&>span:last-child]:text-right [&>span:last-child]:wrap-anywhere">
                 <span className="text-muted-foreground">Balance</span>
                 <span>{balance ?? "unavailable on this node"}</span>
               </div>
-              <div className="flex justify-between gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3 [&>span:last-child]:text-right [&>span:last-child]:wrap-anywhere">
                 <span className="text-muted-foreground">Mailbox created</span>
                 <span>{mailbox ? new Date(mailbox.createdAt).toLocaleString() : "—"}</span>
               </div>
-              <div className="flex justify-between gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3 [&>span:last-child]:text-right [&>span:last-child]:wrap-anywhere">
                 <span className="text-muted-foreground">Created at block</span>
                 <span className="text-mono">#{mailbox?.createdAtBlock ?? "—"}</span>
               </div>
             </div>
 
-            <div className="surface-panel space-y-3 p-5">
+            <div className="surface-panel space-y-3 p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Encryption keys</h2>
               {!keys ? (
                 <>
@@ -287,7 +287,7 @@ export function SettingsPage() {
                       />
                     </div>
                   )}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
                     <Button variant="secondary" onClick={() => setShowPrivate((v) => !v)}>
                       {showPrivate ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       {showPrivate ? "Hide private key" : "Show private key"}
@@ -327,19 +327,19 @@ export function SettingsPage() {
               )}
             </div>
 
-            <div className="surface-panel p-5">
+            <div className="surface-panel p-4 sm:p-5">
               <h2 className="mb-3 text-lg font-semibold">Pallet constants</h2>
               <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
                 {Object.entries(CONSTANTS).map(([k, v]) => (
                   <div key={k} className="rounded-md border border-border p-2">
-                    <dt className="text-xs text-muted-foreground">{k}</dt>
+                    <dt className="text-xs text-muted-foreground wrap-anywhere">{k}</dt>
                     <dd className="text-mono">{v}</dd>
                   </div>
                 ))}
               </dl>
             </div>
 
-            <div className="surface-panel p-5">
+            <div className="surface-panel p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Danger zone</h2>
               <p className="mt-1 mb-3 text-sm text-muted-foreground">
                 Clear the locally cached NuMail state (mailboxes, mail, decrypted payloads) on this device.

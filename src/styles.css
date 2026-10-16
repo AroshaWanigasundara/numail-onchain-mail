@@ -185,3 +185,23 @@
   font-family: var(--font-mono);
   font-variant-ligatures: none;
 }
+
+/* Flexible intrinsic sizing keeps long chain values inside narrow layouts. */
+@layer base {
+  html { min-width: 320px; }
+  body { margin: 0; min-width: 320px; }
+  input, textarea, select { min-width: 0; max-width: 100%; }
+  dd { min-width: 0; overflow-wrap: anywhere; }
+  @media (max-width: 639px) {
+    input:not([type="checkbox"]):not([type="radio"]), textarea:not([readonly]) {
+      font-size: 1rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

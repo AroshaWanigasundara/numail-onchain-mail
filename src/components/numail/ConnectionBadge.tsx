@@ -26,23 +26,24 @@ export function ConnectionBadge() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           aria-label={`Blockchain connection: ${label[status]}`}
-          className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-card p-0 text-xs font-medium sm:w-auto sm:max-w-[220px] sm:px-3"
         >
           {status === "connecting" ? (
             <Loader2 className="h-3 w-3 animate-spin text-warning" />
           ) : (
             <span className={`h-2 w-2 shrink-0 rounded-full ${dot[status]}`} />
           )}
-          <span className="truncate">
+          <span className="hidden truncate sm:inline">
             {label[status]}
             {endpoint ? ` · ${endpoint.replace(/^wss?:\/\//, "")}` : ""}
           </span>
-        </button>
+        </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 space-y-3 text-sm">
+      <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] space-y-3 text-sm">
         <div>
           <p className="font-semibold">{label[status]}</p>
           <p className="text-mono mt-1 text-xs break-all text-muted-foreground">{endpoint ?? "No endpoint configured"}</p>
