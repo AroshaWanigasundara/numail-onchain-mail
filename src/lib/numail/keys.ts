@@ -318,3 +318,172 @@ export async function decryptMailWithKey(
   const body = await aesDecryptText(subtle, aesKey, encryptedBodyB64);
   return { subject, body };
 }
+
+/* ------------------------------------------------------------------ */
+/* Key backup: passphrase-encrypted export / import                     */
+/* ------------------------------------------------------------------ */
+
+const BACKUP_FORMAT = "numail-key-backup";
+const BACKUP_VERSION = 1;
+const PBKDF2_ITERATIONS = 600_000;
+const MAX_ACCEPTED_ITERATIONS = 5_000_000;
+export const MIN_BACKUP_PASSPHRASE = 10;
+
+export class KeyImportError extends Error {}
+
+interface KeyBackupFile {
+  format: string;
+  version: number;
+  address: string;
+  publicKeyHex: string;
+  createdAt: number;
+  kdf: { name: string; iterations: number; salt: string };
+  cipher: { name: string; iv: string; data: string };
+}
+
+/** Binds the ciphertext to the account it was exported for. */
+const backupAad = (address: string) => new TextEncoder().encode(`${BACKUP_FORMAT}:v${BACKUP_VERSION}:${address}`);
+
+async function deriveBackupKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
+  const subtle = subtleOrThrow();
+  const base = await subtle.importKey("raw", new TextEncoder().encode(passphrase.normalize("NFKC")), "PBKDF2", false, [
+    "deriveKey",
+  ]);
+  return subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt: bufferSource(salt), iterations },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+/** Returns the backup file contents (JSON text). */
+export async function exportKeyBackup(address: string, pair: NumailKeyPair, passphrase: string): Promise<string> {
+  if (passphrase.length < MIN_BACKUP_PASSPHRASE) {
+    throw new Error(`Use a passphrase of at least ${MIN_BACKUP_PASSPHRASE} characters.`);
+  }
+  const subtle = subtleOrThrow();
+  const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveBackupKey(passphrase, salt, PBKDF2_ITERATIONS);
+  const data = await subtle.encrypt(
+    { name: "AES-GCM", iv: bufferSource(iv), additionalData: bufferSource(backupAad(address)), tagLength: 128 },
+    key,
+    new TextEncoder().encode(JSON.stringify(pair)),
+  );
+  const file: KeyBackupFile = {
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    address,
+    publicKeyHex: pair.publicKeyHex,
+    createdAt: pair.createdAt,
+    kdf: { name: "PBKDF2-SHA256", iterations: PBKDF2_ITERATIONS, salt: toBase64(bufferSource(salt)) },
+    cipher: { name: "AES-256-GCM", iv: toBase64(bufferSource(iv)), data: toBase64(data) },
+  };
+  return JSON.stringify(file, null, 2);
+}
+
+export function isKeyBackup(text: string): boolean {
+  try {
+    return (JSON.parse(text) as { format?: string } | null)?.format === BACKUP_FORMAT;
+  } catch {
+    return false;
+  }
+}
+
+function b64urlToBytes(v: string): Uint8Array {
+  const b64 = v.replace(/-/g, "+").replace(/_/g, "/");
+  return fromBase64(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+}
+
+function derInteger(bytes: Uint8Array): Uint8Array {
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0) start++;
+  let v = bytes.slice(start);
+  if (((v[0] ?? 0) & 0x80) !== 0) v = new Uint8Array([0, ...v]);
+  return derWrap(0x02, v);
+}
+
+/** Rebuild the public half from a PKCS#8 private key (base64), in the same SPKI form as generated keys. */
+export async function keyPairFromPrivateKey(privateKeyBase64: string, createdAt = Date.now()): Promise<NumailKeyPair> {
+  const subtle = subtleOrThrow();
+  let jwk: JsonWebKey;
+  try {
+    const priv = await subtle.importKey(
+      "pkcs8",
+      bufferSource(fromBase64(privateKeyBase64)),
+      { name: "RSA-OAEP", hash: "SHA-256" },
+      true,
+      ["decrypt"],
+    );
+    jwk = await subtle.exportKey("jwk", priv);
+  } catch {
+    throw new KeyImportError("This is not a valid RSA private key.");
+  }
+  if (!jwk.n || !jwk.e) throw new KeyImportError("This is not a valid RSA private key.");
+  const pkcs1 = derWrap(0x30, new Uint8Array([...derInteger(b64urlToBytes(jwk.n)), ...derInteger(b64urlToBytes(jwk.e))]));
+  return { privateKeyBase64, publicKeyHex: bytesToHex(pkcs1ToSpki(pkcs1)), createdAt };
+}
+
+/** Import the plain `-----BEGIN PRIVATE KEY-----` PEM that Settings has always offered for download. */
+export async function importPrivateKeyPem(text: string): Promise<NumailKeyPair> {
+  const m = /-----BEGIN PRIVATE KEY-----([\s\S]+?)-----END PRIVATE KEY-----/.exec(text);
+  if (!m) {
+    throw new KeyImportError("Expected a PKCS#8 PEM (-----BEGIN PRIVATE KEY-----), like the one downloaded from NuMail settings.");
+  }
+  return keyPairFromPrivateKey((m[1] ?? "").replace(/\s+/g, ""));
+}
+
+/** Decrypt a NuMail key backup. The caller must check `address` against the signed-in account. */
+export async function importKeyBackup(
+  text: string,
+  passphrase: string,
+): Promise<{ address: string; pair: NumailKeyPair }> {
+  let file: KeyBackupFile;
+  try {
+    file = JSON.parse(text) as KeyBackupFile;
+  } catch {
+    throw new KeyImportError("This is not a NuMail key backup.");
+  }
+  if (file?.format !== BACKUP_FORMAT || !file.kdf || !file.cipher || typeof file.address !== "string") {
+    throw new KeyImportError("This is not a NuMail key backup.");
+  }
+  if (file.version !== BACKUP_VERSION) throw new KeyImportError("This backup was made by an unsupported version.");
+  if (!Number.isInteger(file.kdf.iterations) || file.kdf.iterations < 100_000 || file.kdf.iterations > MAX_ACCEPTED_ITERATIONS) {
+    throw new KeyImportError("Unsupported key-derivation settings in this backup.");
+  }
+
+  let pair: NumailKeyPair;
+  try {
+    const key = await deriveBackupKey(passphrase, fromBase64(file.kdf.salt), file.kdf.iterations);
+    const plain = await subtleOrThrow().decrypt(
+      {
+        name: "AES-GCM",
+        iv: bufferSource(fromBase64(file.cipher.iv)),
+        additionalData: bufferSource(backupAad(file.address)),
+        tagLength: 128,
+      },
+      key,
+      bufferSource(fromBase64(file.cipher.data)),
+    );
+    pair = JSON.parse(new TextDecoder().decode(plain)) as NumailKeyPair;
+  } catch {
+    throw new KeyImportError("Wrong passphrase, or the backup file was modified.");
+  }
+
+  const rebuilt = await keyPairFromPrivateKey(pair.privateKeyBase64, pair.createdAt);
+  if (!samePublicKey(rebuilt.publicKeyHex, pair.publicKeyHex)) {
+    throw new KeyImportError("The backup is inconsistent (its public and private key do not match).");
+  }
+  return { address: file.address, pair: rebuilt };
+}
+
+/** Compares two SPKI hex keys by their RSA core, ignoring envelope differences. */
+export function samePublicKey(a: string, b: string): boolean {
+  try {
+    return bytesToHex(spkiToPkcs1(hexToBytes(a))) === bytesToHex(spkiToPkcs1(hexToBytes(b)));
+  } catch {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+}
