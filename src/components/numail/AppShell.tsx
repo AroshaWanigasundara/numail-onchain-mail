@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -25,6 +25,7 @@ import {
   Send,
   Settings as SettingsIcon,
   Wallet,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNumail } from "@/lib/numail/provider";
@@ -35,6 +36,7 @@ import { NetworkSettings } from "./NetworkSettings";
 import { ConnectionBadge } from "./ConnectionBadge";
 import { shortAddr } from "./shared";
 import { SystemNoticeDialog } from "./SystemNoticeDialog";
+import { ARCHIVE_PREFIX } from "@/lib/numail/archive";
 
 const folderIcon = (name: string) => {
   if (name === "inbox") return Inbox;
@@ -44,18 +46,20 @@ const folderIcon = (name: string) => {
 };
 
 export function useFolderCounts() {
-  const { ledger, account } = useNumail();
+  const { ledger, account, archives } = useNumail();
   return useMemo(() => {
     const counts: Record<string, { total: number; unread: number }> = {};
     if (!account) return counts;
+    const archivedIds = new Set(archives.flatMap((a) => a.items.map((i) => i.mailId)));
     for (const d of ledger.delivery) {
       if (d.account !== account.address || d.status === "Tombstoned") continue;
+      if (d.folder === "archive" && archivedIds.has(d.mailId)) continue;
       counts[d.folder] ??= { total: 0, unread: 0 };
       counts[d.folder]!.total += 1;
       if (d.status === "Delivered") counts[d.folder]!.unread += 1;
     }
     return counts;
-  }, [ledger.delivery, account]);
+  }, [ledger.delivery, account, archives]);
 }
 
 function SidebarBody({
@@ -67,7 +71,8 @@ function SidebarBody({
   onSelectFolder?: (f: string) => void;
   onNavigate?: () => void;
 }) {
-  const { account, ledger, disconnectWallet, balance } = useNumail();
+  const { account, ledger, disconnectWallet, balance, archives, actions } = useNumail();
+  const fileRef = useRef<HTMLInputElement>(null);
   const counts = useFolderCounts();
   const mailbox = account ? ledger.mailboxes[account.address] : undefined;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -120,6 +125,63 @@ function SidebarBody({
             </Link>
           );
         })}
+        {account && (
+          <>
+            <div className="px-3 pt-4 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Archive folders
+            </div>
+            {archives.map((a) => {
+              const key = `${ARCHIVE_PREFIX}${a.id}`;
+              const active = pathname === "/" && activeFolder === key;
+              return (
+                <Link
+                  key={a.id}
+                  to="/"
+                  onClick={() => {
+                    onSelectFolder?.(key);
+                    onNavigate?.();
+                  }}
+                  className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                    active
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent"
+                  }`}
+                >
+                  <Archive className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 truncate text-left">{a.name}</span>
+                  <span className="text-[11px] text-muted-foreground">{a.items.length}</span>
+                </Link>
+              );
+            })}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pst"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                actions
+                  .openPst(file)
+                  .then((id) => onSelectFolder?.(`${ARCHIVE_PREFIX}${id}`))
+                  .catch((err: unknown) =>
+                    toast.error("Could not open .pst file", {
+                      description: err instanceof Error ? err.message : String(err),
+                    }),
+                  );
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+            >
+              <FolderOpen className="h-4 w-4 shrink-0" />
+              Open .pst file…
+            </button>
+          </>
+        )}
       </nav>
 
       <div className="space-y-0.5 border-t border-sidebar-border pt-2">
