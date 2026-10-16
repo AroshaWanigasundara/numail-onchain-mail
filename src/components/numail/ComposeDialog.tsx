@@ -122,7 +122,7 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{threadParent ? "Reply" : "New mail"}</DialogTitle>
           <DialogDescription>
@@ -143,7 +143,7 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
                 </Badge>
               ))}
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <Input
                 id="recipients"
                 value={recipientInput}
@@ -198,7 +198,7 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
               {attachments.map((a, i) => (
                 <div key={`${a.cid}-${i}`} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
                   <Paperclip className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1 truncate">{a.name}</span>
+                  <span className="min-w-0 flex-1 truncate">{a.name}</span>
                   <Badge variant="outline" className="border-success/40 bg-success/10 text-[10px] text-success">
                     DNC anchored
                   </Badge>
@@ -247,7 +247,7 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
           )}
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:justify-end">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

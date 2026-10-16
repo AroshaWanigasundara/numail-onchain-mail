@@ -80,7 +80,7 @@ export function SystemNoticeDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Test system notice</DialogTitle>
           <DialogDescription>
@@ -93,7 +93,7 @@ export function SystemNoticeDialog({ open, onOpenChange }: Props) {
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="sn-sender">Sender</Label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <Input
                 id="sn-sender"
                 value={sender}
@@ -120,7 +120,7 @@ export function SystemNoticeDialog({ open, onOpenChange }: Props) {
                 </Badge>
               ))}
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <Input
                 id="sn-recipients"
                 value={recipientInput}
@@ -184,7 +184,7 @@ export function SystemNoticeDialog({ open, onOpenChange }: Props) {
           )}
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:justify-end">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

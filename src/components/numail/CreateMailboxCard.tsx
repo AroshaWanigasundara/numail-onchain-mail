@@ -37,7 +37,7 @@ export function CreateMailboxCard() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-xl surface-panel p-6 sm:p-8">
+    <div className="mx-auto w-full max-w-xl surface-panel p-4 sm:p-8">
       <h1 className="text-2xl font-semibold tracking-tight">Create your mailbox</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         A mailbox registers your acceptance policy and folders on chain. This is a one-time <code className="text-mono text-xs">create_mailbox</code> extrinsic.
@@ -100,7 +100,7 @@ export function CreateMailboxCard() {
               </Badge>
             ))}
             {folders.map((f) => (
-              <Badge key={f} variant="outline" className="gap-1 capitalize">
+              <Badge key={f} variant="outline" className="max-w-full gap-1 whitespace-normal wrap-anywhere capitalize">
                 {f}
                 <button type="button" aria-label={`Remove ${f}`} onClick={() => setFolders((x) => x.filter((y) => y !== f))}>
                   <X className="h-3 w-3" />
@@ -108,7 +108,7 @@ export function CreateMailboxCard() {
               </Badge>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <Input
               id="folder"
               value={folderInput}

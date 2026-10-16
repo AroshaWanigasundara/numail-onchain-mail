@@ -61,7 +61,7 @@ export function NetworkSettings({ onSaved }: { onSaved?: () => void }) {
               setResult(null);
             }}
             placeholder="ws://localhost:9944"
-            className="text-mono text-sm"
+            className="text-mono min-w-0 text-sm"
           />
           <Button type="button" variant="secondary" onClick={runTest} disabled={testing}>
             {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
@@ -78,31 +78,31 @@ export function NetworkSettings({ onSaved }: { onSaved?: () => void }) {
       )}
 
       <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:flex">
           <span className="font-medium">Connection status</span>
           <ConnectionBadge />
         </div>
         <dl className="mt-3 grid gap-1 text-xs text-muted-foreground">
-          <div className="flex gap-2">
-            <dt className="w-36 shrink-0">Active endpoint</dt>
-            <dd className="text-mono break-all">{endpoint ?? "not configured"}</dd>
+          <div className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-2">
+            <dt className="font-medium">Active endpoint</dt>
+            <dd className="text-mono min-w-0 break-all">{endpoint ?? "not configured"}</dd>
           </div>
-          <div className="flex gap-2">
-            <dt className="w-36 shrink-0">Chain</dt>
+          <div className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-2">
+            <dt className="font-medium">Chain</dt>
             <dd>{chainName ?? "—"}</dd>
           </div>
-          <div className="flex gap-2">
-            <dt className="w-36 shrink-0">pallet-numail</dt>
+          <div className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-2">
+            <dt className="font-medium">pallet-numail</dt>
             <dd>{palletAvailable ? "detected on node" : "not exposed by this node (local simulation active)"}</dd>
           </div>
-          <div className="flex gap-2">
-            <dt className="w-36 shrink-0">Last connected</dt>
+          <div className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-2">
+            <dt className="font-medium">Last connected</dt>
             <dd>{lastConnectedAt ? new Date(lastConnectedAt).toLocaleString() : "never"}</dd>
           </div>
           {connError && status !== "connected" && (
-            <div className="flex gap-2">
-              <dt className="w-36 shrink-0">Last error</dt>
-              <dd className="text-destructive break-words">{connError}</dd>
+            <div className="grid min-w-0 grid-cols-1 gap-1 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-2">
+              <dt className="font-medium">Last error</dt>
+              <dd className="min-w-0 text-destructive wrap-anywhere">{connError}</dd>
             </div>
           )}
         </dl>

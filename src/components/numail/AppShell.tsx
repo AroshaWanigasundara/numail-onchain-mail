@@ -78,7 +78,7 @@ function SidebarBody({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <div className="flex h-full flex-col gap-4 p-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 p-3">
       {account && (
         <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-3">
           <p className="text-xs font-medium text-sidebar-foreground">{account.name}</p>
@@ -216,7 +216,7 @@ function ConnectWalletScreen() {
   const { connectWallet, useDemoAccount, useDevAccount, walletError, status, palletAvailable } = useNumail();
   const [noticeOpen, setNoticeOpen] = useState(false);  
   return (
-    <div className="mx-auto w-full max-w-md surface-panel p-8 text-center">
+    <div className="mx-auto w-full max-w-md surface-panel p-5 text-center sm:p-8">
       <div className="brand-gradient mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
         <Mail className="h-6 w-6 text-primary-foreground" />
       </div>
@@ -300,9 +300,10 @@ export function AppShell({
   const ready = Boolean(endpoint) && Boolean(account) && Boolean(mailbox);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur">
-        <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
+        <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 sm:flex sm:gap-3 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2">
           {ready && (
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
@@ -310,8 +311,8 @@ export function AppShell({
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 bg-sidebar p-0">
-                <SheetTitle className="px-4 pt-4 text-sm">NuMail</SheetTitle>
+              <SheetContent side="left" className="flex w-72 max-w-[calc(100vw-2rem)] flex-col bg-sidebar p-0">
+                <SheetTitle className="shrink-0 px-4 pt-4 text-sm">NuMail</SheetTitle>
                 <SidebarBody
                   {...(activeFolder ? { activeFolder } : {})}
                   {...(onSelectFolder ? { onSelectFolder } : {})}
@@ -321,25 +322,26 @@ export function AppShell({
             </Sheet>
           )}
 
-          <Link to="/" className="flex items-center gap-2">
-            <span className="brand-gradient flex h-8 w-8 items-center justify-center rounded-lg">
+          <Link to="/" className="flex min-w-0 items-center gap-2">
+            <span className="brand-gradient flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
               <Mail className="h-4 w-4 text-primary-foreground" />
             </span>
-            <span className="text-base font-semibold tracking-tight">NuMail</span>
+            <span className="truncate text-base font-semibold tracking-tight">NuMail</span>
           </Link>
 
-          <div className="ml-auto flex items-center gap-2">
+          </div>
+          <div className="flex min-w-0 shrink-0 items-center gap-1 sm:ml-auto sm:gap-2">
             {rightSlot}
             {!endpoint ? (
-              <Button size="sm" variant="outline" onClick={() => setSetupOpen(true)}>
+              <Button size="sm" variant="outline" aria-label="Configure endpoint" onClick={() => setSetupOpen(true)}>
                 <SettingsIcon className="h-4 w-4" />
-                Configure endpoint
+                <span className="hidden sm:inline">Configure endpoint</span>
               </Button>
             ) : (
               <ConnectionBadge />
             )}
             {ready && (
-              <Button size="sm" onClick={() => setComposeOpen(true)}>
+              <Button size="sm" aria-label="Compose mail" onClick={() => setComposeOpen(true)}>
                 <PenSquare className="h-4 w-4" />
                 <span className="hidden sm:inline">Compose</span>
               </Button>
@@ -366,7 +368,7 @@ export function AppShell({
 
       <div className="flex">
         {ready && (
-          <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
+          <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-64 shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
             <SidebarBody
               {...(activeFolder ? { activeFolder } : {})}
               {...(onSelectFolder ? { onSelectFolder } : {})}
@@ -377,7 +379,7 @@ export function AppShell({
         <main className="min-w-0 flex-1">
           {!endpoint ? (
             <div className="mx-auto w-full max-w-2xl p-4 sm:p-8">
-              <div className="surface-panel p-6">
+              <div className="surface-panel p-4 sm:p-6">
                 <h1 className="text-xl font-semibold tracking-tight">Configure your blockchain connection</h1>
                 <p className="mt-1 mb-5 text-sm text-muted-foreground">
                   NuMail talks to a Substrate node over WebSocket. Choose a preset or enter your own endpoint, test it,
@@ -387,11 +389,11 @@ export function AppShell({
               </div>
             </div>
           ) : !account ? (
-            <div className="p-4 py-12 sm:p-8">
+            <div className="p-4 py-6 sm:p-8">
               <ConnectWalletScreen />
             </div>
           ) : !mailbox ? (
-            <div className="p-4 py-12 sm:p-8">
+            <div className="p-4 py-6 sm:p-8">
               <CreateMailboxCard />
             </div>
           ) : (
@@ -403,7 +405,7 @@ export function AppShell({
       <ComposeDialog open={composeOpen} onOpenChange={setComposeOpen} />
 
       <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Configure blockchain connection</DialogTitle>
             <DialogDescription>Pick a preset or enter a custom Substrate WebSocket endpoint.</DialogDescription>
