@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import {
   DEFAULT_FOLDERS,
+  DEFAULT_ENDPOINT,
   ENDPOINT_STORAGE_KEY,
   PALLET_ERRORS,
   type Attachment,
@@ -208,7 +209,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
   // restored, so every browser reload lands back on the connect screen.
   useEffect(() => {
     const saved = window.localStorage.getItem(ENDPOINT_STORAGE_KEY);
-    if (saved) setEndpointState(saved);
+    setEndpointState(saved || DEFAULT_ENDPOINT);
     window.localStorage.removeItem("numail_account");
     setLedger(loadLedger());
   }, []);
