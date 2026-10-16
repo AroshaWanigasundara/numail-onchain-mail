@@ -36,6 +36,7 @@ import {
   Search,
   ShieldOff,
   Trash2,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNumail } from "@/lib/numail/provider";
@@ -44,6 +45,9 @@ import type { DeliveryState, MailEnvelope } from "@/lib/numail/types";
 import { GLOSSARY, Hint, StatusBadge, shortAddr } from "./shared";
 import { ARCHIVE_PREFIX, canRestore, describeBlocks, restoreDeadline, type ArchivedItem } from "@/lib/numail/archive";
 import { ArchiveDialog } from "./ArchiveDialog";
+import { loadKeyPair } from "@/lib/numail/keys";
+import { Link } from "@tanstack/react-router";
+import { DeliveryReceipts } from "./DeliveryReceipts";
 
 const PAGE_SIZE = 12;
 
@@ -179,8 +183,27 @@ export function MailboxPage() {
       .sort((a, b) => a.block - b.block);
   }, [selectedRow, ledger.mail]);
 
+  const missingKey = useMemo(
+    () => Boolean(address && mailbox && !loadKeyPair(address)),
+    // ledger.payloads changes after a sync, which happens right after a key import
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [address, mailbox, ledger.payloads],
+  );
+
   return (
     <AppShell activeFolder={folder} onSelectFolder={setFolder}>
+      {missingKey && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+          <KeyRound className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1">
+            This device doesn't have your encryption key, so your mail can't be decrypted. Import your key backup to
+            continue.
+          </span>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/settings">Import key</Link>
+          </Button>
+        </div>
+      )}
       <div className="grid min-h-[calc(100vh-3.5rem)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         {/* list */}
         <section className={`border-r border-border ${selectedRow ? "hidden xl:block" : ""}`} aria-label="Mail list">
@@ -426,7 +449,12 @@ export function MailboxPage() {
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0">To</dt>
-                  <dd className="text-mono break-all">{selectedRow.mail.recipients.map((r) => shortAddr(r, 8)).join(", ")}</dd>
+                  <dd className="text-mono break-all">
+                    {selectedRow.mail.recipients
+                      .filter((r) => r !== selectedRow.mail.sender || selectedRow.mail.recipients.length === 1)
+                      .map((r) => shortAddr(r, 8))
+                      .join(", ")}
+                  </dd>
                 </div>
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0">Date</dt>
@@ -443,6 +471,10 @@ export function MailboxPage() {
                   </div>
                 ) : null}
               </dl>
+
+              {selectedRow.mail.sender === address && (
+                <DeliveryReceipts key={selectedRow.mail.mailId} mail={selectedRow.mail} />
+              )}
 
               <div className="mt-5 rounded-lg border border-border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
                 {payloadFor(ledger, selectedRow)?.body ?? (
