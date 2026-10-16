@@ -78,7 +78,7 @@ function SidebarBody({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 p-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4 p-3">
       {account && (
         <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-3">
           <p className="text-xs font-medium text-sidebar-foreground">{account.name}</p>
