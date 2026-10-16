@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   CheckCheck,
   FolderInput,
@@ -30,25 +32,35 @@ import {
   MailOpen,
   Paperclip,
   Reply,
+  Save,
   Search,
   ShieldOff,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useNumail } from "@/lib/numail/provider";
-import { blockToDate } from "@/lib/numail/ledger";
+import { blockToDate, type LedgerState } from "@/lib/numail/ledger";
 import type { DeliveryState, MailEnvelope } from "@/lib/numail/types";
 import { GLOSSARY, Hint, StatusBadge, shortAddr } from "./shared";
+import { ARCHIVE_PREFIX, canRestore, describeBlocks, restoreDeadline, type ArchivedItem } from "@/lib/numail/archive";
+import { ArchiveDialog } from "./ArchiveDialog";
 
 const PAGE_SIZE = 12;
 
 interface Row {
   delivery: DeliveryState;
   mail: MailEnvelope;
+  /** set when the row comes from a named archive folder (.pst) */
+  archived?: { archiveId: string; item: ArchivedItem; onChain: boolean };
 }
 
+/** Live payload first; archived snapshot as fallback (covers mail that is only in the .pst). */
+const payloadFor = (ledger: LedgerState, row: Row) =>
+  ledger.payloads[row.mail.mailId] ??
+  (row.archived ? { subject: row.archived.item.subject, body: row.archived.item.body } : undefined);
+
 export function MailboxPage() {
-  const { ledger, account, actions, busy } = useNumail();
+  const { ledger, account, actions, busy, archives } = useNumail();
   const [folder, setFolder] = useState("inbox");
   const [query, setQuery] = useState("");
   const [readFilter, setReadFilter] = useState("all");
@@ -58,22 +70,49 @@ export function MailboxPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Row | null>(null);
   const [confirm, setConfirm] = useState<{ kind: "tombstone" | "block"; value: string } | null>(null);
+  const [archiveFor, setArchiveFor] = useState<string | null>(null);
 
   const address = account?.address;
   const mailbox = address ? ledger.mailboxes[address] : undefined;
 
+  const archiveId = folder.startsWith(ARCHIVE_PREFIX) ? folder.slice(ARCHIVE_PREFIX.length) : null;
+  const activeArchive = archiveId ? archives.find((a) => a.id === archiveId) : undefined;
+  const archivedIds = useMemo(() => new Set(archives.flatMap((a) => a.items.map((i) => i.mailId))), [archives]);
+
+  // closing the open archive folder drops you back to the inbox
+  useEffect(() => {
+    if (archiveId && !activeArchive) setFolder("inbox");
+  }, [archiveId, activeArchive]);
+
   const rows: Row[] = useMemo(() => {
     if (!address) return [];
+    if (activeArchive) {
+      return activeArchive.items
+        .map((item): Row => {
+          const live = ledger.delivery.find(
+            (d) => d.account === address && d.mailId === item.mailId && d.status !== "Tombstoned",
+          );
+          return {
+            delivery: { mailId: item.mailId, account: address, status: "Archived", folder },
+            mail: ledger.mail[item.mailId] ?? item.envelope,
+            archived: { archiveId: activeArchive.id, item, onChain: Boolean(live) },
+          };
+        })
+        .sort((a, b) => b.mail.block - a.mail.block);
+    }
     return ledger.delivery
       .filter((d) => d.account === address && d.folder === folder && d.status !== "Tombstoned")
+      // mail filed in a named archive folder is shown there, not in the plain "archive" list
+      .filter((d) => !(d.folder === "archive" && archivedIds.has(d.mailId)))
       .map((d) => ({ delivery: d, mail: ledger.mail[d.mailId]! }))
       .filter((r) => Boolean(r.mail))
       .sort((a, b) => b.mail.block - a.mail.block);
-  }, [ledger, address, folder]);
+  }, [ledger, address, folder, activeArchive, archivedIds]);
 
   const filtered = useMemo(() => {
-    return rows.filter(({ delivery, mail }) => {
-      const payload = ledger.payloads[mail.mailId];
+    return rows.filter((row) => {
+      const { delivery, mail } = row;
+      const payload = payloadFor(ledger, row);
       const haystack = `${mail.sender} ${mail.recipients.join(" ")} ${payload?.subject ?? ""}`.toLowerCase();
       if (query && !haystack.includes(query.toLowerCase())) return false;
       if (readFilter === "unread" && delivery.status !== "Delivered") return false;
@@ -111,6 +150,20 @@ export function MailboxPage() {
     [selected, rows],
   );
 
+  const arch = selectedRow?.archived;
+  const restorable = arch ? arch.onChain && canRestore(arch.item, ledger.block) : false;
+  const restoreNote = (() => {
+    if (!arch) return "";
+    const deadline = restoreDeadline(arch.item);
+    if (!canRestore(arch.item, ledger.block)) {
+      return `Retention period ended at block #${deadline}. This mail can no longer be moved out of the archive.`;
+    }
+    if (!arch.onChain) return "This mail now only exists in the .pst file. It is no longer on chain, so it can't be restored.";
+    return deadline === null
+      ? "No retention limit: you can restore this mail at any time."
+      : `You can restore this mail until block #${deadline} (about ${describeBlocks(deadline - ledger.block)} from now).`;
+  })();
+
   const openMail = async (row: Row) => {
     setSelected(row.mail.mailId);
     if (row.delivery.status === "Delivered") {
@@ -133,8 +186,27 @@ export function MailboxPage() {
         <section className={`border-r border-border ${selectedRow ? "hidden xl:block" : ""}`} aria-label="Mail list">
           <div className="space-y-3 border-b border-border p-4">
             <div className="flex items-center justify-between gap-2">
-              <h1 className="text-lg font-semibold capitalize">{folder}</h1>
-              <span className="text-xs text-muted-foreground">{filtered.length} item(s)</span>
+              <h1 className={`truncate text-lg font-semibold ${activeArchive ? "" : "capitalize"}`}>
+                {activeArchive ? activeArchive.name : folder}
+              </h1>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">{filtered.length} item(s)</span>
+                {activeArchive && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void actions.savePst(activeArchive.id).catch(() => undefined)}
+                    >
+                      <Save className="h-4 w-4" />
+                      Save .pst
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => actions.closeArchive(activeArchive.id)}>
+                      Close
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
             <div className="relative">
               <Search className="absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" />
@@ -170,7 +242,7 @@ export function MailboxPage() {
           ) : (
             <ul className="divide-y divide-border">
               {pageRows.map((row) => {
-                const payload = ledger.payloads[row.mail.mailId];
+                const payload = payloadFor(ledger, row);
                 const unread = row.delivery.status === "Delivered";
                 return (
                   <li key={row.mail.mailId}>
@@ -242,32 +314,73 @@ export function MailboxPage() {
                 </Button>
                 <StatusBadge status={selectedRow.delivery.status} />
                 <div className="ml-auto flex flex-wrap gap-1.5">
-                  {selectedRow.delivery.status === "Delivered" && (
+                  {!arch && selectedRow.delivery.status === "Delivered" && (
                     <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void actions.markRead(selectedRow.mail.mailId)}>
                       <CheckCheck className="h-4 w-4" />
                       Mark read
                     </Button>
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline">
-                        <FolderInput className="h-4 w-4" />
-                        Move
+
+                  {arch ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" disabled={!restorable || busy !== null}>
+                          <ArchiveRestore className="h-4 w-4" />
+                          Restore to…
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Restore to folder</DropdownMenuLabel>
+                        {(mailbox?.folders ?? [])
+                          .filter((f) => f !== "archive")
+                          .map((f) => (
+                            <DropdownMenuItem
+                              key={f}
+                              className="capitalize"
+                              onClick={() =>
+                                void actions
+                                  .restoreArchived(arch.archiveId, selectedRow.mail.mailId, f)
+                                  .then(() => setSelected(null))
+                                  .catch(() => undefined)
+                              }
+                            >
+                              {f}
+                            </DropdownMenuItem>
+                          ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" variant="outline">
+                            <FolderInput className="h-4 w-4" />
+                            Move
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
+                          {/* "archive" is reached through the Archive button so a .pst is always written */}
+                          {(mailbox?.folders ?? [])
+                            .filter((f) => f !== "archive")
+                            .map((f) => (
+                              <DropdownMenuItem
+                                key={f}
+                                className="capitalize"
+                                onClick={() => void actions.moveToFolder(selectedRow.mail.mailId, f)}
+                              >
+                                {f}
+                              </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => setArchiveFor(selectedRow.mail.mailId)}>
+                        <Archive className="h-4 w-4" />
+                        Archive
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
-                      {(mailbox?.folders ?? []).map((f) => (
-                        <DropdownMenuItem
-                          key={f}
-                          className="capitalize"
-                          onClick={() => void actions.moveToFolder(selectedRow.mail.mailId, f)}
-                        >
-                          {f}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    </>
+                  )}
+
                   <Button size="sm" variant="outline" onClick={() => setReplyTo(selectedRow)}>
                     <Reply className="h-4 w-4" />
                     Reply
@@ -280,19 +393,31 @@ export function MailboxPage() {
                     <ShieldOff className="h-4 w-4" />
                     Block
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setConfirm({ kind: "tombstone", value: selectedRow.mail.mailId })}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </Button>
+                  {!arch && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setConfirm({ kind: "tombstone", value: selectedRow.mail.mailId })}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </Button>
+                  )}
                 </div>
               </div>
 
+              {arch && (
+                <p
+                  className={`mt-3 rounded-md border px-3 py-2 text-xs ${
+                    restorable ? "border-border text-muted-foreground" : "border-warning/40 bg-warning/10"
+                  }`}
+                >
+                  {restoreNote}
+                </p>
+              )}
+
               <h2 className="mt-4 text-xl font-semibold tracking-tight">
-                {ledger.payloads[selectedRow.mail.mailId]?.subject ?? "Encrypted subject"}
+                {payloadFor(ledger, selectedRow)?.subject ?? "Encrypted subject"}
               </h2>
               <dl className="mt-3 grid gap-1 text-xs text-muted-foreground">
                 <div className="flex gap-2">
@@ -320,11 +445,8 @@ export function MailboxPage() {
               </dl>
 
               <div className="mt-5 rounded-lg border border-border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
-                {ledger.payloads[selectedRow.mail.mailId]?.body ?? (
-                  <span className="text-muted-foreground">
-                    This body was encrypted for another device. Only the body reference{" "}
-                    <span className="text-mono">{selectedRow.mail.bodyRef}</span> is stored on chain.
-                  </span>
+                {payloadFor(ledger, selectedRow)?.body ?? (
+                  <span className="text-muted-foreground italic">Encrypted for another device</span>
                 )}
               </div>
 
@@ -376,7 +498,14 @@ export function MailboxPage() {
         onOpenChange={(v) => !v && setReplyTo(null)}
         threadParent={replyTo?.mail.threadParent ?? replyTo?.mail.mailId}
         initialRecipients={replyTo ? [replyTo.mail.sender] : []}
-        initialSubject={replyTo ? `Re: ${ledger.payloads[replyTo.mail.mailId]?.subject ?? ""}` : ""}
+        initialSubject={replyTo ? `Re: ${payloadFor(ledger, replyTo)?.subject ?? ""}` : ""}
+      />
+      
+      <ArchiveDialog
+        open={archiveFor !== null}
+        onOpenChange={(v) => !v && setArchiveFor(null)}
+        mailId={archiveFor}
+        onArchived={() => setSelected(null)}
       />
 
       <AlertDialog open={confirm !== null} onOpenChange={(v) => !v && setConfirm(null)}>
