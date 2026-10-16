@@ -45,6 +45,21 @@ import {
   loadKeyPair,
   publicKeyPem,
 } from "./keys";
+import {
+  MAX_ARCHIVE_NAME,
+  PstError,
+  acquirePstSink,
+  buildPst,
+  canRestore,
+  dropPstSink,
+  hasPstSink,
+  loadArchives,
+  newArchiveId,
+  readPst,
+  saveArchives,
+  type ArchiveFolder,
+  type ArchivedItem,
+} from "./archive";
 
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
@@ -83,6 +98,7 @@ interface NumailContextValue {
 
   // ledger
   ledger: LedgerState;
+  archives: ArchiveFolder[];
   busy: string | null;
   actions: {
     createMailbox: (p: MailboxPolicy, retention: number | undefined, folders: string[]) => Promise<void>;
@@ -106,6 +122,11 @@ interface NumailContextValue {
     }) => Promise<string | null>;
     markRead: (mailId: string) => Promise<void>;
     moveToFolder: (mailId: string, folder: string) => Promise<void>;
+    archiveMail: (mailId: string, target: { archiveId: string } | { newName: string }) => Promise<void>;
+    restoreArchived: (archiveId: string, mailId: string, folder: string) => Promise<void>;
+    openPst: (file: File) => Promise<string>;
+    savePst: (archiveId: string) => Promise<void>;
+    closeArchive: (archiveId: string) => void;
     tombstone: (mailId: string) => Promise<void>;
     blockSender: (address: string) => Promise<void>;
     unblockSender: (address: string) => Promise<void>;
@@ -142,6 +163,42 @@ export function NumailProvider({ children }: { children: ReactNode }) {
 
   const [ledger, setLedger] = useState<LedgerState>(() => loadLedger());
   const [busy, setBusy] = useState<string | null>(null);
+
+  const [archives, setArchives] = useState<ArchiveFolder[]>([]);
+  const archivesRef = useRef<ArchiveFolder[]>([]);
+  const ledgerRef = useRef<LedgerState>(ledger);
+  ledgerRef.current = ledger;
+
+  const commitArchives = useCallback((address: string, next: ArchiveFolder[]) => {
+    archivesRef.current = next;
+    setArchives(next);
+    if (!saveArchives(address, next)) {
+      toast.warning("Browser storage is full", {
+        description: "Archive folders could not be cached in the browser. The .pst file is the only copy.",
+      });
+    }
+  }, []);
+
+  const accountAddress = account?.address;
+  useEffect(() => {
+    const next = accountAddress ? loadArchives(accountAddress) : [];
+    archivesRef.current = next;
+    setArchives(next);
+  }, [accountAddress]);
+
+  const headBlockNow = useCallback(async (): Promise<number> => {
+    const api = apiRef.current;
+    if (status === "connected" && palletAvailable && Boolean(account) && account?.source !== "demo") {
+      try {
+        const header = await api?.rpc?.chain?.getHeader?.();
+        const n = Number(header?.number?.toString?.() ?? 0);
+        if (n > 0) return n;
+      } catch {
+        /* fall back to the last synced block */
+      }
+    }
+    return ledgerRef.current.block;
+  }, [status, palletAvailable, account]);
 
   const apiRef = useRef<AnyApi>(null);
   const retryRef = useRef(0);
@@ -978,6 +1035,205 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         );
         if (account.source !== "demo") await syncMailFromChain(address);
       },
+      archiveMail: async (mailId, target) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+
+        // ---- validate synchronously: the file picker below needs the click's user gesture ----
+        const led = ledgerRef.current;
+        const envelope = led.mail[mailId];
+        const delivery = led.delivery.find((d) => d.mailId === mailId && d.account === address && d.status !== "Tombstoned");
+        const payload = led.payloads[mailId];
+        if (!envelope || !delivery) throw new Error("Mail not found");
+        if (!payload || (payload.subject === "Encrypted subject" && !payload.body)) {
+          throw new Error("This mail can't be decrypted on this device, so a .pst copy can't be made.");
+        }
+        const keyPair = loadKeyPair(address);
+        if (!keyPair) throw new Error("No encryption key on this device — create or import your key first.");
+
+        const existing = "archiveId" in target ? archivesRef.current.find((a) => a.id === target.archiveId) : undefined;
+        if ("archiveId" in target && !existing) throw new Error("Archive folder not found");
+        const name = existing?.name ?? ("newName" in target ? target.newName.trim() : "");
+        if (!name || name.length > MAX_ARCHIVE_NAME) {
+          throw new Error(`Folder name must be 1–${MAX_ARCHIVE_NAME} characters.`);
+        }
+        if (!existing && archivesRef.current.some((a) => a.name.toLowerCase() === name.toLowerCase())) {
+          throw new Error(`An archive folder named “${name}” already exists.`);
+        }
+        const id = existing?.id ?? newArchiveId();
+
+        // 1) choose the .pst location FIRST (before any chain change; cancelling aborts cleanly)
+        const sink = await acquirePstSink(id, name);
+        if (!sink) throw new Error("Archive cancelled — no .pst location was chosen.");
+
+        // 2) on-chain: existing move_to_folder → default "archive" folder
+        if (delivery.folder !== "archive") {
+          const folderBytes = onChain ? await chainFolderBytes("archive") : "archive";
+          await run(
+            "moveToFolder",
+            (d) => ledgerOps.moveToFolder(d, address, mailId, "archive"),
+            "Moved to archive",
+            () => [Number(mailId), folderBytes],
+          );
+        }
+
+        // 3) snapshot into the named archive folder
+        const head = await headBlockNow();
+        const retention = ledgerRef.current.mailboxes[address]?.retention;
+        const item: ArchivedItem = {
+          mailId,
+          envelope,
+          subject: payload.subject,
+          body: payload.body,
+          originFolder: delivery.folder,
+          archivedAtBlock: head,
+          archivedAt: Date.now(),
+          retentionBlocks: retention,
+        };
+        const now = Date.now();
+        const next: ArchiveFolder[] = existing
+          ? archivesRef.current.map((a) =>
+              a.id === id ? { ...a, updatedAt: now, items: [item, ...a.items.filter((i) => i.mailId !== mailId)] } : a,
+            )
+          : [...archivesRef.current, { id, name, owner: address, createdAt: now, updatedAt: now, items: [item] }];
+        commitArchives(address, next);
+        if (account.source !== "demo") await syncMailFromChain(address);
+
+        // 4) write the .pst
+        try {
+          const folderNow = next.find((a) => a.id === id)!;
+          await sink.write(await buildPst(folderNow, keyPair.publicKeyHex));
+          toast.success(`Archived to “${name}”`, { description: `Saved to ${sink.fileName}` });
+        } catch (e) {
+          toast.warning(`Archived to “${name}”, but the .pst file was not written`, {
+            description: `${e instanceof Error ? e.message : String(e)} — use “Save .pst” on the folder to retry.`,
+          });
+        }
+      },
+
+      restoreArchived: async (archiveId, mailId, folder) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        const af = archivesRef.current.find((a) => a.id === archiveId);
+        const item = af?.items.find((i) => i.mailId === mailId);
+        if (!af || !item) throw new Error("Archived mail not found");
+        if (folder === "archive") throw new Error("Choose a folder other than archive.");
+
+        const head = await headBlockNow();
+        if (!canRestore(item, head)) {
+          toast.error("Retention period ended", {
+            description: "This archived mail can no longer be moved out of the archive.",
+          });
+          throw new Error("Retention period ended");
+        }
+        const live = ledgerRef.current.delivery.find(
+          (d) => d.mailId === mailId && d.account === address && d.status !== "Tombstoned",
+        );
+        if (!live) {
+          toast.error("Not available on chain", {
+            description: "This mail only exists in the .pst file now, so it can't be restored.",
+          });
+          throw new Error("Mail is no longer on chain");
+        }
+
+        const folderBytes = onChain ? await chainFolderBytes(folder) : folder;
+        await run(
+          "moveToFolder",
+          (d) => ledgerOps.moveToFolder(d, address, mailId, folder),
+          `Restored to ${folder}`,
+          () => [Number(mailId), folderBytes],
+        );
+
+        const next = archivesRef.current.map((a) =>
+          a.id === archiveId ? { ...a, updatedAt: Date.now(), items: a.items.filter((i) => i.mailId !== mailId) } : a,
+        );
+        commitArchives(address, next);
+        if (account.source !== "demo") await syncMailFromChain(address);
+
+        // keep the .pst in step (silently, only if it is already open in this session)
+        const pair = loadKeyPair(address);
+        const remaining = next.find((a) => a.id === archiveId);
+        if (remaining && pair && hasPstSink(archiveId)) {
+          try {
+            const sink = await acquirePstSink(archiveId, remaining.name);
+            await sink?.write(await buildPst(remaining, pair.publicKeyHex));
+          } catch {
+            toast.warning("The .pst file could not be updated", { description: "Use “Save .pst” on the folder." });
+          }
+        } else {
+          toast.info("The .pst file still lists this mail until you save it again.");
+        }
+      },
+
+      openPst: async (file) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        const keyPair = loadKeyPair(address);
+        if (!keyPair) throw new Error("No encryption key on this device — import your key first.");
+
+        let parsed;
+        try {
+          parsed = await readPst(await file.text(), address, keyPair.privateKeyBase64);
+        } catch (e) {
+          throw e instanceof PstError ? e : new Error("Could not read this .pst file.");
+        }
+        const { folder, skipped } = parsed;
+
+        // mail that was restored out of the archive since this .pst was last saved stays out
+        const led = ledgerRef.current;
+        const wasRestored = (i: ArchivedItem) => {
+          const live = led.delivery.find((d) => d.mailId === i.mailId && d.account === address && d.status !== "Tombstoned");
+          return !!live && live.folder !== "archive";
+        };
+        const incoming = folder.items.filter((i) => !wasRestored(i));
+        const restored = folder.items.length - incoming.length;
+
+        const existing = archivesRef.current.find((a) => a.id === folder.id);
+        const merged: ArchiveFolder = existing
+          ? {
+              ...existing,
+              updatedAt: Date.now(),
+              items: [...existing.items, ...incoming.filter((i) => !existing.items.some((e) => e.mailId === i.mailId))],
+            }
+          : { ...folder, items: incoming };
+        commitArchives(
+          address,
+          existing ? archivesRef.current.map((a) => (a.id === folder.id ? merged : a)) : [...archivesRef.current, merged],
+        );
+
+        const notes = [
+          skipped ? `${skipped} item(s) could not be decrypted` : "",
+          restored ? `${restored} already restored item(s) skipped` : "",
+        ].filter(Boolean);
+        toast.success(`Opened “${folder.name}”`, {
+          description: [`${incoming.length} item(s)`, ...notes].join(" · "),
+        });
+        return folder.id;
+      },
+
+      savePst: async (archiveId) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        const af = archivesRef.current.find((a) => a.id === archiveId);
+        const keyPair = loadKeyPair(address);
+        if (!af) throw new Error("Archive folder not found");
+        if (!keyPair) throw new Error("No encryption key on this device.");
+        const sink = await acquirePstSink(af.id, af.name); // first await: keeps the user gesture
+        if (!sink) return;
+        await sink.write(await buildPst(af, keyPair.publicKeyHex));
+        toast.success(`Saved ${sink.fileName}`);
+      },
+
+      closeArchive: (archiveId) => {
+        const address = account?.address;
+        if (!address) return;
+        const af = archivesRef.current.find((a) => a.id === archiveId);
+        dropPstSink(archiveId);
+        commitArchives(address, archivesRef.current.filter((a) => a.id !== archiveId));
+        toast.success(`Closed “${af?.name ?? "archive"}”`, {
+          description: "Your .pst file is untouched — open it again any time.",
+        });
+      },
       tombstone: async (mailId) => {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
@@ -1005,7 +1261,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         toast.success("Local NuMail state cleared");
       },
     }),
-    [run, account, onChain, chainFolderBytes, recipientPublicKeys, persist, syncAccountFromChain, syncMailFromChain, status, palletAvailable],
+    [run, account, onChain, chainFolderBytes, recipientPublicKeys, persist, syncAccountFromChain, syncMailFromChain, status, palletAvailable, commitArchives, headBlockNow],
   );
 
   const value: NumailContextValue = {
@@ -1029,6 +1285,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     disconnectWallet,
     balance,
     ledger,
+    archives,
     busy,
     actions,
   };
