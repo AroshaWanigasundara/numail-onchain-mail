@@ -16,6 +16,7 @@ import {
   PALLET_ERRORS,
   type Attachment,
   type MailboxPolicy,
+  type DeliveryStatus,
 } from "./types";
 import {
   LedgerError,
@@ -45,6 +46,9 @@ import {
   hexToBytes,
   loadKeyPair,
   publicKeyPem,
+  saveKeyPair,
+  samePublicKey,
+  type NumailKeyPair,
 } from "./keys";
 import {
   MAX_ARCHIVE_NAME,
@@ -106,6 +110,12 @@ interface NumailContextValue {
     setPolicy: (p: MailboxPolicy, retention: number | undefined) => Promise<void>;
     addFolder: (name: string) => Promise<void>;
     deleteFolder: (name: string) => Promise<void>;   // NEW
+    importKey: (pair: NumailKeyPair) => Promise<void>;
+    watchDeliveryStatuses: (
+      mailId: string,
+      recipients: string[],
+      onUpdate: (statuses: Record<string, DeliveryStatus | null>) => void,
+    ) => Promise<() => void>;
     sendMail: (input: {
       recipients: string[];
       subject: string;
@@ -871,6 +881,38 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         );
         if (account.source !== "demo") await syncAccountFromChain(address);
       },
+      importKey: async (pair) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+
+        // Verify against the public key registered on chain for THIS account,
+        // so a wrong key can never replace a working one.
+        if (account.source !== "demo") {
+          const api = apiRef.current as AnyApi;
+          const q = api?.query?.nuMail ?? api?.query?.numail;
+          if (status !== "connected" || !palletAvailable || !q?.publicKeys) {
+            throw new Error("Connect to the network first so the key can be checked against your on-chain public key.");
+          }
+          const raw = await q.publicKeys(address);
+          const value = raw?.unwrapOr ? raw.unwrapOr(raw) : raw;
+          const jsonValue = value?.toJSON?.();
+          const onChain = String(
+            typeof jsonValue === "string" ? jsonValue : (value?.toHex?.() ?? value?.toString?.() ?? ""),
+          );
+          // no key registered yet (mailbox not created) → nothing to compare against
+          if (onChain && onChain !== "0x" && !samePublicKey(pair.publicKeyHex, chainPublicKeyToSpkiHex(onChain))) {
+            throw new Error(
+              "This key does not match the public key registered on chain for this account, so it can't decrypt this mailbox.",
+            );
+          }
+        }
+
+        saveKeyPair(address, pair);
+        toast.success("Key imported", {
+          description: "This device can now read and send encrypted mail for this account.",
+        });
+        if (account.source !== "demo") await syncAccountFromChain(address);
+      },
       setPolicy: async (policy, retention) => {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
@@ -1023,6 +1065,42 @@ export function NumailProvider({ children }: { children: ReactNode }) {
           () => [Number(mailId)],
         );
         if (account.source !== "demo") await syncMailFromChain(address);
+      },
+      watchDeliveryStatuses: async (mailId, recipients, onUpdate) => {
+        const toStatus = (opt: AnyApi): DeliveryStatus | null => {
+          if (!opt || opt.isSome === false) return null; // Option::None
+          const inner = opt.isSome ? opt.unwrap() : opt;
+          const name = String(inner?.type ?? inner?.toString?.() ?? "");
+          return name === "Delivered" || name === "Read" || name === "Archived" || name === "Tombstoned" ? name : null;
+        };
+
+        // demo / local mode: the simulated ledger already holds every recipient's state
+        if (!onChain) {
+          const led = ledgerRef.current;
+          onUpdate(
+            Object.fromEntries(
+              recipients.map((r) => [r, led.delivery.find((d) => d.mailId === mailId && d.account === r)?.status ?? null]),
+            ),
+          );
+          return () => undefined;
+        }
+
+        const api = apiRef.current as AnyApi;
+        const q = api?.query?.nuMail ?? api?.query?.numail;
+        if (!q?.deliveryState?.multi) throw new Error("This node does not expose nuMail.deliveryState");
+
+        // deliveryState(mailId, recipient) -> Option<DeliveryStatus>, subscribed so the
+        // sender sees "Read" the moment the recipient's mark_read is included in a block
+        const keys = recipients.map((r) => [Number(mailId), r]);
+        const unsub = await q.deliveryState.multi(keys, (results: AnyApi[]) => {
+          const out: Record<string, DeliveryStatus | null> = {};
+          results.forEach((opt, i) => {
+            const addr = recipients[i];
+            if (addr) out[addr] = toStatus(opt);
+          });
+          onUpdate(out);
+        });
+        return unsub as () => void;
       },
       moveToFolder: async (mailId, folder) => {
         const address = account?.address;
