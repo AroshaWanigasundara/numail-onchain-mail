@@ -97,18 +97,18 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
   {
     id: "dev-node",
     name: "My Node (Development)",
-    url: "ws://62.169.26.99:9946",
+    url: "ws://IPAddress:9944",
     secure: false,
     description:
-      "Your development node over plain ws://. Works when the app is served over http:// (or localhost) — browsers block ws:// from https:// pages.",
+      "Your development node over plain ws://. Replace IPAddress with your node's address. Works when the app is served over http:// (or localhost) — browsers block ws:// from https:// pages.",
   },
   {
     id: "production",
     name: "Production Node (Secure)",
-    url: "wss://62.169.26.99:9946",
+    url: "wss://IPAddress:9944",
     secure: true,
     description:
-      "Same node over TLS. Once you put the node behind your domain with a wss:// proxy, replace this URL with wss://your-domain.",
+      "Your node over TLS. Replace IPAddress with your secure domain or node address (wss:// needs a valid certificate).",
   },
   {
     id: "rococo",
