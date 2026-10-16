@@ -121,6 +121,9 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
 
 export const ENDPOINT_STORAGE_KEY = "numail_rpc_endpoint";
 
+/** Used on a first visit, before the user has chosen an endpoint. */
+export const DEFAULT_ENDPOINT = "wss://on-chain-email-pallet.projectfreedom.io/ws";
+
 export const PALLET_ERRORS: Record<string, string> = {
   MailboxNotFound: "That recipient has no NuMail mailbox yet. Ask them to create one first.",
   SenderBlocked: "This recipient has blocked your address.",
