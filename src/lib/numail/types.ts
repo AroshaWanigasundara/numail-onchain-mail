@@ -65,7 +65,7 @@ export interface NumailEvent {
 }
 
 export const CONSTANTS = {
-  MaxRecipients: 16,
+  MaxRecipients: 64,
   MaxAttachments: 8,
   MaxFolders: 12,
   MaxSubjectBytes: 256,
