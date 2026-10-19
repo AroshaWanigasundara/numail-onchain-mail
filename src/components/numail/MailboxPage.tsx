@@ -48,6 +48,8 @@ import { ArchiveDialog } from "./ArchiveDialog";
 import { loadKeyPair } from "@/lib/numail/keys";
 import { Link } from "@tanstack/react-router";
 import { DeliveryReceipts } from "./DeliveryReceipts";
+import { mailExpiry } from "@/lib/numail/retention";
+import { ExpiryBadge, ExpiryNotice } from "./ExpiryBadge";
 
 const PAGE_SIZE = 12;
 
@@ -64,7 +66,7 @@ const payloadFor = (ledger: LedgerState, row: Row) =>
   (row.archived ? { subject: row.archived.item.subject, body: row.archived.item.body } : undefined);
 
 export function MailboxPage() {
-  const { ledger, account, actions, busy, archives } = useNumail();
+  const { ledger, account, actions, busy, archives, status, palletAvailable } = useNumail();
   const [folder, setFolder] = useState("inbox");
   const [query, setQuery] = useState("");
   const [readFilter, setReadFilter] = useState("all");
@@ -78,6 +80,12 @@ export function MailboxPage() {
 
   const address = account?.address;
   const mailbox = address ? ledger.mailboxes[address] : undefined;
+
+  // Auto-expiry is done by the pallet's on_initialize hook, so only show it on a real chain
+  // (the demo ledger never expires mail) and not for offline .pst archive items.
+  const expiryLive = status === "connected" && palletAvailable && account?.source !== "demo";
+  const expiryOf = (row: Row) =>
+    expiryLive && !row.archived ? mailExpiry(row.mail.block, mailbox?.retention, ledger.block) : null;
 
   const archiveId = folder.startsWith(ARCHIVE_PREFIX) ? folder.slice(ARCHIVE_PREFIX.length) : null;
   const activeArchive = archiveId ? archives.find((a) => a.id === archiveId) : undefined;
@@ -155,6 +163,7 @@ export function MailboxPage() {
   );
 
   const arch = selectedRow?.archived;
+  const selectedExpiry = selectedRow ? expiryOf(selectedRow) : null;
   const restorable = arch ? arch.onChain && canRestore(arch.item, ledger.block) : false;
   const restoreNote = (() => {
     if (!arch) return "";
@@ -265,6 +274,7 @@ export function MailboxPage() {
           ) : (
             <ul className="divide-y divide-border">
               {pageRows.map((row) => {
+                const expiry = expiryOf(row);
                 const payload = payloadFor(ledger, row);
                 const unread = row.delivery.status === "Delivered";
                 return (
@@ -297,6 +307,7 @@ export function MailboxPage() {
                             thread
                           </Badge>
                         )}
+                        {expiry && <ExpiryBadge expiry={expiry} />}
                         <span className="text-mono ml-auto text-[10px] text-muted-foreground">#{row.mail.block}</span>
                       </div>
                     </button>
@@ -474,6 +485,10 @@ export function MailboxPage() {
 
               {selectedRow.mail.sender === address && (
                 <DeliveryReceipts key={selectedRow.mail.mailId} mail={selectedRow.mail} />
+              )}
+
+              {selectedExpiry && mailbox?.retention && (
+                <ExpiryNotice expiry={selectedExpiry} retention={mailbox.retention} />
               )}
 
               <div className="mt-5 rounded-lg border border-border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap wrap-anywhere">
