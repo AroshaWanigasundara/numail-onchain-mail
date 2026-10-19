@@ -445,6 +445,16 @@ export function NumailProvider({ children }: { children: ReactNode }) {
             : [];
           const threadParentRaw = json["threadParent"] ?? json["thread_parent"];
           const createdAt = Number(json["createdAt"] ?? json["created_at"] ?? 0);
+          
+          // The envelope in MailItems is permanent evidence, so it must not decide visibility.
+          // The sender's own copy has a DeliveryState entry too; once retention tombstones it,
+          // the mail has to leave the Sent list (and we skip decrypting it).
+          if (outgoing) {
+            const own = await q.deliveryState(Number(mailId), address);
+            const ownValue = typeof own?.isSome === "boolean" ? (own.isSome ? own.unwrap() : null) : own;
+            if (ownValue && /tombstone/i.test(ownValue.toString?.() ?? "")) continue;
+          }
+
           chainMail[mailId] = {
             mailId,
             sender,
