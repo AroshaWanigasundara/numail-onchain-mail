@@ -74,6 +74,7 @@ export const CONSTANTS = {
   MaxBlocklist: 128,
   BlockTimeSeconds: 6,
   MaxFolderNameBytes: 32,   // runtime MaxFolderNameLen
+  MaxDisplayNameBytes: 64,   // runtime MaxDisplayNameLen
 } as const;
 
 export const DEFAULT_FOLDERS = ["inbox", "sent", "archive"];
@@ -152,4 +153,8 @@ export const PALLET_ERRORS: Record<string, string> = {
   ProtectedFolder: "Inbox, sent and archive are required and cannot be deleted.",
   TooManyFolders: "Your mailbox has reached its maximum number of folders.",
   FolderNameTooLong: "That folder name is too long.",
+  DisplayNameTooLong: "That display name is too long.",
+  InvalidDisplayName: "Use letters, numbers, spaces, dots, dashes and underscores only.",
+  DisplayNameTaken: "Someone already uses that name. Try another.",
+  NoDisplayName: "You have no display name to clear.",
 };
