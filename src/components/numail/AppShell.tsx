@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode, useEffect } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -46,7 +46,7 @@ const folderIcon = (name: string) => {
 };
 
 export function useFolderCounts() {
-  const { ledger, account, archives } = useNumail();
+  const { ledger, account, archives, } = useNumail();
   return useMemo(() => {
     const counts: Record<string, { total: number; unread: number }> = {};
     if (!account) return counts;
@@ -71,7 +71,7 @@ function SidebarBody({
   onSelectFolder?: (f: string) => void;
   onNavigate?: () => void;
 }) {
-  const { account, ledger, disconnectWallet, balance, archives, actions } = useNumail();
+  const { account, ledger, disconnectWallet, balance, archives, actions, directory } = useNumail();
   const fileRef = useRef<HTMLInputElement>(null);
   const counts = useFolderCounts();
   const mailbox = account ? ledger.mailboxes[account.address] : undefined;
@@ -81,7 +81,7 @@ function SidebarBody({
     <div className="flex h-full min-h-0 flex-1 flex-col gap-4 p-3">
       {account && (
         <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-3">
-          <p className="text-xs font-medium text-sidebar-foreground">{account.name}</p>
+          <p className="text-xs font-medium text-sidebar-foreground">{directory[account.address] ?? account.name}</p>
           <button
             type="button"
             className="text-mono mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
@@ -213,7 +213,7 @@ function SidebarBody({
 }
 
 function ConnectWalletScreen() {
-  const { connectWallet, useDemoAccount, useDevAccount, walletError, status, palletAvailable } = useNumail();
+  const { connectWallet, useDemoAccount, useDevAccount, walletError, status, palletAvailable, } = useNumail();
   const [noticeOpen, setNoticeOpen] = useState(false);  
   return (
     <div className="mx-auto w-full max-w-md surface-panel p-5 text-center sm:p-8">
@@ -292,6 +292,15 @@ export function AppShell({
   rightSlot?: ReactNode;
 }) {
   const { endpoint, account, ledger } = useNumail();
+  const [composeTo, setComposeTo] = useState<string[]>([]);
+  useEffect(() => {
+    const onCompose = (e: Event) => {
+      setComposeTo((e as CustomEvent<{ to?: string[] }>).detail?.to ?? []);
+      setComposeOpen(true);
+    };
+    window.addEventListener("numail:compose", onCompose);
+    return () => window.removeEventListener("numail:compose", onCompose);
+  }, []);
   const [composeOpen, setComposeOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -402,7 +411,14 @@ export function AppShell({
         </main>
       </div>
 
-      <ComposeDialog open={composeOpen} onOpenChange={setComposeOpen} />
+      <ComposeDialog
+        open={composeOpen}
+        onOpenChange={(v) => {
+          setComposeOpen(v);
+          if (!v) setComposeTo([]);
+        }}
+        initialRecipients={composeTo}
+      />
 
       <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
