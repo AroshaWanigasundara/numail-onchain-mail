@@ -66,6 +66,8 @@ import {
   type ArchivedItem,
 } from "./archive";
 
+import { validateDisplayName } from "./names";
+
 export type ConnStatus = "idle" | "connecting" | "connected" | "disconnected" | "error";
 
 export interface WalletAccount {
@@ -104,6 +106,8 @@ interface NumailContextValue {
   // ledger
   ledger: LedgerState;
   archives: ArchiveFolder[];
+  directory: Record<string, string>;
+  contacts: Record<string, string>;
   busy: string | null;
   actions: {
     createMailbox: (p: MailboxPolicy, retention: number | undefined, folders: string[]) => Promise<void>;
@@ -142,6 +146,10 @@ interface NumailContextValue {
     blockSender: (address: string) => Promise<void>;
     unblockSender: (address: string) => Promise<void>;
     resetChainData: () => void;
+    setDisplayName: (name: string) => Promise<void>;
+    clearDisplayName: () => Promise<void>;
+    /** private nickname for an address (empty = remove) */
+    setContact: (address: string, nickname: string) => void;
   };
 }
 
@@ -158,6 +166,10 @@ function humanError(code: string) {
 }
 
 const folderToBytes = (name: string) => `0x${bytesToHex(new TextEncoder().encode(name))}`;
+
+const DIRECTORY_CACHE_KEY = "numail_directory_v1";
+const CONTACTS_KEY = "numail_contacts_v1:";
+
 
 export function NumailProvider({ children }: { children: ReactNode }) {
   const [endpoint, setEndpointState] = useState<string | null>(null);
@@ -196,6 +208,62 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     archivesRef.current = next;
     setArchives(next);
   }, [accountAddress]);
+
+  const [directory, setDirectory] = useState<Record<string, string>>({});
+  const [contacts, setContacts] = useState<Record<string, string>>({});
+  const contactsRef = useRef<Record<string, string>>({});
+
+  // paint cached names immediately; the chain refreshes them right after connecting
+  useEffect(() => {
+    try {
+      setDirectory(JSON.parse(window.localStorage.getItem(DIRECTORY_CACHE_KEY) ?? "{}") as Record<string, string>);
+    } catch {
+      /* ignore a corrupt cache */
+    }
+  }, []);
+
+  useEffect(() => {
+    let next: Record<string, string> = {};
+    if (accountAddress) {
+      try {
+        next = JSON.parse(window.localStorage.getItem(CONTACTS_KEY + accountAddress) ?? "{}") as Record<string, string>;
+      } catch {
+        /* ignore */
+      }
+    }
+    contactsRef.current = next;
+    setContacts(next);
+  }, [accountAddress]);
+
+  const syncDirectory = useCallback(async () => {
+    const api = apiRef.current as AnyApi;
+    const q = api?.query?.nuMail ?? api?.query?.numail;
+    if (!q?.displayNames?.entries) return; // node without display-name support
+    try {
+      const entries = await q.displayNames.entries();
+      const next: Record<string, string> = {};
+      for (const [key, value] of entries) {
+        const address = key.args?.[0]?.toString?.();
+        const inner = value?.isSome === false ? null : value?.isSome ? value.unwrap() : value;
+        const hex = inner?.toHex?.();
+        if (!address || typeof hex !== "string") continue;
+        let text = "";
+        for (let i = 2; i < hex.length; i += 2) text += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+        next[address] = text;
+      }
+      setDirectory(next);
+      window.localStorage.setItem(DIRECTORY_CACHE_KEY, JSON.stringify(next));
+    } catch (e) {
+      console.warn("[numail] display-name sync failed", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status !== "connected" || !palletAvailable) return;
+    void syncDirectory();
+    const timer = setInterval(() => void syncDirectory(), 30_000);
+    return () => clearInterval(timer);
+  }, [status, palletAvailable, syncDirectory]);
 
   const headBlockNow = useCallback(async (): Promise<number> => {
     const api = apiRef.current;
@@ -874,6 +942,7 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     () => ({
       createMailbox: async (policy, retention, folders) => {
         const address = account?.address;
+        
         if (!address) throw new Error("Connect a wallet first");
         // inbox/sent/archive must always be registered on chain, plus any
         // custom folders the user added in the UI.
@@ -1200,6 +1269,79 @@ export function NumailProvider({ children }: { children: ReactNode }) {
         }
       },
 
+      setDisplayName: async (name) => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        const clean = name.trim();
+        const invalid = validateDisplayName(clean);
+        if (invalid) throw new Error(invalid);
+
+        if (!onChain) {
+          // demo / offline: keep it locally only
+          setDirectory((d) => ({ ...d, [address]: clean }));
+          toast.success("Display name saved", { description: clean });
+          return;
+        }
+        const api = apiRef.current as AnyApi;
+        if (!hasCall(api, "setDisplayName")) {
+          throw new Error("This node doesn't support display names yet — the runtime needs the upgrade.");
+        }
+        setBusy("setDisplayName");
+        try {
+          try {
+            await submitExtrinsic(api, address, account.source, "setDisplayName", [folderToBytes(clean)], account.devName);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error("Could not save display name", { description: humanError(msg.split(".").pop() ?? msg) || msg });
+            throw new Error(msg);
+          }
+          toast.success("Display name saved", { description: clean });
+          await syncDirectory();
+        } finally {
+          setBusy(null);
+        }
+      },
+
+      clearDisplayName: async () => {
+        const address = account?.address;
+        if (!address) throw new Error("Connect a wallet first");
+        if (!onChain) {
+          setDirectory((d) => {
+            const { [address]: _removed, ...rest } = d;
+            return rest;
+          });
+          return;
+        }
+        const api = apiRef.current as AnyApi;
+        if (!hasCall(api, "clearDisplayName")) throw new Error("This node doesn't support display names yet.");
+        setBusy("clearDisplayName");
+        try {
+          try {
+            await submitExtrinsic(api, address, account.source, "clearDisplayName", [], account.devName);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error("Could not clear display name", { description: humanError(msg.split(".").pop() ?? msg) || msg });
+            throw new Error(msg);
+          }
+          toast.success("Display name removed");
+          await syncDirectory();
+        } finally {
+          setBusy(null);
+        }
+      },
+
+      setContact: (address, nickname) => {
+        const owner = account?.address;
+        if (!owner) return;
+        const next = { ...contactsRef.current };
+        const clean = nickname.trim().slice(0, 40);
+        if (clean) next[address] = clean;
+        else delete next[address];
+        contactsRef.current = next;
+        setContacts(next);
+        window.localStorage.setItem(CONTACTS_KEY + owner, JSON.stringify(next));
+      },
+
       restoreArchived: async (archiveId, mailId, folder) => {
         const address = account?.address;
         if (!address) throw new Error("Connect a wallet first");
@@ -1377,6 +1519,8 @@ export function NumailProvider({ children }: { children: ReactNode }) {
     archives,
     busy,
     actions,
+    directory,
+    contacts,
   };
 
   return <NumailContext.Provider value={value}>{children}</NumailContext.Provider>;
