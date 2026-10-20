@@ -32,6 +32,7 @@ import { AddressAvatar } from "./AddressAvatar";
 import { DeliveryReceipts } from "./DeliveryReceipts";
 import { ExpiryNotice } from "./ExpiryBadge";
 import { GLOSSARY, Hint, StatusBadge, shortAddr } from "./shared";
+import { AddressName, useNames } from "./AddressName";
 
 interface Props {
   /** every visible message of the thread, oldest first */
@@ -149,6 +150,7 @@ interface CardProps {
 
 function MessageCard({ m, expanded, onToggle, onReply, onArchive, onConfirm }: CardProps) {
   const { ledger, account, actions, busy, status, palletAvailable } = useNumail();
+  const { resolve, named } = useNames();
   const address = account?.address ?? "";
   const mailbox = address ? ledger.mailboxes[address] : undefined;
   const { mail, delivery } = m;
@@ -185,11 +187,11 @@ function MessageCard({ m, expanded, onToggle, onReply, onArchive, onConfirm }: C
       } ${unread ? "border-l-4 border-l-primary" : ""}`}
     >
       <button type="button" onClick={onToggle} aria-expanded={expanded} className="flex w-full items-start gap-3 px-4 py-3 text-left">
-        <AddressAvatar address={mail.sender} />
+        <AddressAvatar address={mail.sender} name={named(mail.sender)} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`text-mono truncate text-xs ${unread ? "font-semibold" : ""}`}>
-              {mine ? "You" : shortAddr(mail.sender, 8)}
+              {mine ? "You" : resolve(mail.sender).label}
             </span>
             {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
             <Badge variant="outline" className="hidden shrink-0 text-[10px] capitalize sm:inline-flex">
@@ -212,15 +214,22 @@ function MessageCard({ m, expanded, onToggle, onReply, onArchive, onConfirm }: C
           <dl className="mt-3 grid gap-1 text-xs text-muted-foreground">
             <div className="flex gap-2">
               <dt className="w-14 shrink-0">From</dt>
-              <dd className="text-mono min-w-0 break-all">{mail.sender}</dd>
+              <dd className="min-w-0">
+                <AddressName address={mail.sender} className="font-medium text-foreground" />
+                <span className="text-mono ml-2 text-[10px]">{shortAddr(mail.sender, 8)}</span>
+              </dd>
             </div>
             <div className="flex gap-2">
               <dt className="w-14 shrink-0">To</dt>
-              <dd className="text-mono min-w-0 break-all">
+              <dd className="flex min-w-0 flex-wrap gap-x-1.5">
                 {mail.recipients
                   .filter((r) => r !== mail.sender || mail.recipients.length === 1)
-                  .map((r) => shortAddr(r, 8))
-                  .join(", ")}
+                  .map((r, i, arr) => (
+                    <span key={r} className="inline-flex max-w-full">
+                      <AddressName address={r} className="text-foreground" />
+                      {i < arr.length - 1 && ","}
+                    </span>
+                  ))}
               </dd>
             </div>
             <div className="flex gap-2">
