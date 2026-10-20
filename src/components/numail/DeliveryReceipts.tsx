@@ -5,6 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNumail } from "@/lib/numail/provider";
 import type { DeliveryStatus, MailEnvelope } from "@/lib/numail/types";
 import { Hint, shortAddr } from "./shared";
+import { AddressName, useNames } from "./AddressName";
+import { AddressAvatar } from "./AddressAvatar";
 
 type Receipt = "Delivered" | "Read" | null;
 
@@ -13,12 +15,6 @@ type Receipt = "Delivered" | "Read" | null;
  * already acted on the mail, so they are shown as Read.
  */
 const toReceipt = (s: DeliveryStatus | null | undefined): Receipt => (!s ? null : s === "Delivered" ? "Delivered" : "Read");
-
-const hue = (s: string) => {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-};
 
 function ReceiptPill({ receipt }: { receipt: Receipt }) {
   const base = "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors";
@@ -48,6 +44,7 @@ function ReceiptPill({ receipt }: { receipt: Receipt }) {
 
 export function DeliveryReceipts({ mail }: { mail: MailEnvelope }) {
   const { actions, ledger, status, palletAvailable, account } = useNumail();
+  const { named } = useNames();
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
 
@@ -163,16 +160,11 @@ export function DeliveryReceipts({ mail }: { mail: MailEnvelope }) {
           <ul className="mt-2 divide-y divide-border">
             {rows.map(({ address, receipt }) => (
               <li key={address} className="flex items-center gap-3 px-4 py-2.5">
-                <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                  style={{ backgroundColor: `hsl(${hue(address)} 55% 42%)` }}
-                  aria-hidden
-                >
-                  {address.slice(1, 3).toUpperCase()}
-                </span>
-                <span className="text-mono min-w-0 flex-1 truncate text-xs" title={address}>
-                  {shortAddr(address, 10)}
-                </span>
+                <AddressAvatar address={address} name={named(address)} />
+                <div className="min-w-0 flex-1">
+                  <AddressName address={address} className="text-sm font-medium" />
+                  <p className="text-mono truncate text-[10px] text-muted-foreground">{shortAddr(address, 10)}</p>
+                </div>
                 <ReceiptPill receipt={receipt} />
               </li>
             ))}
