@@ -6,10 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Paperclip, Plus, Send, X } from "lucide-react";
+import { Loader2, Paperclip, Send, X } from "lucide-react";
 import { CONSTANTS, type Attachment } from "@/lib/numail/types";
 import { useNumail } from "@/lib/numail/provider";
-import { GLOSSARY, Hint, policyLabel, shortAddr } from "./shared";
+import { GLOSSARY, Hint, shortAddr } from "./shared";
+import { RecipientPicker } from "./RecipientPicker";
 
 interface Props {
   open: boolean;
@@ -22,7 +23,6 @@ interface Props {
 export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipients, initialSubject }: Props) {
   const { ledger, actions, busy, account, status } = useNumail();
   const [recipients, setRecipients] = useState<string[]>([]);
-  const [recipientInput, setRecipientInput] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -41,7 +41,6 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
     setBody("");
     setAttachments([]);
     setError(null);
-    setRecipientInput("");
   }, [open]);
 
   const knownAccounts = useMemo(
@@ -61,19 +60,6 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
   useEffect(() => {
     if (requiredPostage > 0) setPostage(String(requiredPostage));
   }, [requiredPostage]);
-
-  const addRecipient = (value?: string) => {
-    const addr = (value ?? recipientInput).trim();
-    if (!addr) return;
-    if (recipients.includes(addr)) return;
-    if (recipients.length >= CONSTANTS.MaxRecipients) {
-      setError(`A single mail may carry at most ${CONSTANTS.MaxRecipients} recipients.`);
-      return;
-    }
-    setRecipients((r) => [...r, addr]);
-    setRecipientInput("");
-    setError(null);
-  };
 
   const addAttachment = () => {
     if (attachments.length >= CONSTANTS.MaxAttachments) {
@@ -138,51 +124,13 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="recipients">Recipients ({recipients.length}/{CONSTANTS.MaxRecipients})</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {recipients.map((r) => (
-                <Badge key={r} variant="secondary" className="text-mono gap-1 text-[11px]">
-                  {shortAddr(r)}
-                  <button type="button" aria-label={`Remove ${r}`} onClick={() => setRecipients((x) => x.filter((y) => y !== r))}>
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <Input
-                id="recipients"
-                value={recipientInput}
-                placeholder="Paste an SS58 account address"
-                spellCheck={false}
-                className="text-mono text-sm"
-                onChange={(e) => setRecipientInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addRecipient();
-                  }
-                }}
-              />
-              <Button type="button" variant="secondary" onClick={() => addRecipient()}>
-                <Plus className="h-4 w-4" />
-                Add
-              </Button>
-            </div>
-            {knownAccounts.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                <span className="text-xs text-muted-foreground">Known mailboxes:</span>
-                {knownAccounts.map((a) => (
-                  <button
-                    key={a}
-                    type="button"
-                    onClick={() => addRecipient(a)}
-                    className="text-mono rounded-full border border-border px-2 py-0.5 text-[11px] hover:bg-accent"
-                  >
-                    {shortAddr(a, 5)} · {policyLabel(ledger.mailboxes[a]!.policy)}
-                  </button>
-                ))}
-              </div>
-            )}
+            <RecipientPicker
+              value={recipients}
+              onChange={setRecipients}
+              extra={knownAccounts}
+              max={CONSTANTS.MaxRecipients}
+              onError={setError}
+            />
           </div>
 
           <div className="space-y-2">
