@@ -24,9 +24,10 @@ import { CONSTANTS, DEFAULT_FOLDERS, type MailboxPolicy, type PolicyKind } from 
 import { useNumail } from "@/lib/numail/provider";
 import { GLOSSARY, Hint, policyLabel, shortAddr } from "./shared";
 import { ExportKeyDialog, ImportKeyDialog } from "./KeyBackupDialogs";
+import { ContactsPanel, DisplayNamePanel } from "./ProfilePanels";
 
 export function SettingsPage() {
-  const { ledger, account, actions, busy, balance } = useNumail();
+  const { ledger, account, actions, busy, balance, directory } = useNumail();
   const mailbox = account ? ledger.mailboxes[account.address] : undefined;
   const blocklist = account ? (ledger.blocklists[account.address] ?? []) : [];
 
@@ -231,7 +232,7 @@ export function SettingsPage() {
               <h2 className="mb-2 text-lg font-semibold">Account</h2>
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3 [&>span:last-child]:text-right [&>span:last-child]:wrap-anywhere">
                 <span className="text-muted-foreground">Address</span>
-                <span className="text-mono break-all text-right">{account ? shortAddr(account.address, 10) : "—"}</span>
+                <span className="text-mono break-all text-right">{account ? (directory[account.address] ? `${directory[account.address]} ` : "") + shortAddr(account.address, 10) : "—"}</span>
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-3 [&>span:last-child]:text-right [&>span:last-child]:wrap-anywhere">
                 <span className="text-muted-foreground">Balance</span>
@@ -246,6 +247,8 @@ export function SettingsPage() {
                 <span className="text-mono">#{mailbox?.createdAtBlock ?? "—"}</span>
               </div>
             </div>
+            <DisplayNamePanel />
+            <ContactsPanel />
 
             <div className="surface-panel space-y-3 p-4 sm:p-5">
               <h2 className="text-lg font-semibold">Encryption keys</h2>
