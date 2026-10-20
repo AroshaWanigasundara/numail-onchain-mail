@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,8 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   threadParent?: string | undefined;
-  initialRecipients?: string[];
-  initialSubject?: string;
+  initialRecipients?: string[] | undefined;
+  initialSubject?: string | undefined;
 }
 
 export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipients, initialSubject }: Props) {
@@ -29,15 +29,20 @@ export function ComposeDialog({ open, onOpenChange, threadParent, initialRecipie
   const [postage, setPostage] = useState("0");
   const [error, setError] = useState<string | null>(null);
 
+  // Seed the form once, when the dialog opens. The initial values are read through a ref so a
+  // parent re-render (which happens on every synced block) can never wipe what is being typed.
+  const initial = useRef({ recipients: initialRecipients, subject: initialSubject });
+  initial.current = { recipients: initialRecipients, subject: initialSubject };
+
   useEffect(() => {
     if (!open) return;
-    setRecipients(initialRecipients ?? []);
-    setSubject(initialSubject ?? "");
+    setRecipients(initial.current.recipients ?? []);
+    setSubject(initial.current.subject ?? "");
     setBody("");
     setAttachments([]);
     setError(null);
     setRecipientInput("");
-  }, [open, initialRecipients, initialSubject]);
+  }, [open]);
 
   const knownAccounts = useMemo(
     () => Object.keys(ledger.mailboxes).filter((a) => a !== account?.address),
