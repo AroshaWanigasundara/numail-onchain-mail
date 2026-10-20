@@ -38,11 +38,13 @@ import {
   threadRootId,
   type MailRow,
 } from "@/lib/numail/threads";
+import { useNames } from "./AddressName";
 
 const PAGE_SIZE = 12;
 
 export function MailboxPage() {
   const { ledger, account, actions, archives, status, palletAvailable } = useNumail();
+  const { resolve, named } = useNames();
   const [folder, setFolder] = useState("inbox");
   const [query, setQuery] = useState("");
   const [readFilter, setReadFilter] = useState("all");
@@ -263,7 +265,7 @@ export function MailboxPage() {
                   .filter((e): e is NonNullable<ReturnType<typeof expiryOf>> => e !== null)
                   .sort((a, b) => a.secondsLeft - b.secondsLeft)[0];
                 const who = c.participants.length
-                  ? c.participants.slice(0, 3).map((a) => shortAddr(a, 5)).join(", ") +
+                  ? c.participants.slice(0, 3).map((a) => resolve(a).label).join(", ") +
                     (c.participants.length > 3 ? ` +${c.participants.length - 3}` : "")
                   : "Me";
                 return (
@@ -275,7 +277,10 @@ export function MailboxPage() {
                         selectedKey === c.key ? "bg-accent" : ""
                       }`}
                     >
-                      <AddressAvatar address={c.participants[0] ?? address ?? row.mail.sender} />
+                      <AddressAvatar
+                        address={c.participants[0] ?? address ?? row.mail.sender}
+                        name={c.participants[0] ? named(c.participants[0]) : undefined}
+                      />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className={`text-mono truncate text-xs ${unread ? "font-semibold" : "text-muted-foreground"}`}>
