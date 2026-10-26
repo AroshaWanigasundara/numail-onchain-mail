@@ -14,7 +14,6 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NumailProvider } from "@/lib/numail/provider";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
@@ -41,9 +40,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -86,22 +82,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         name: "description",
         content: "On-chain correspondence client for the Polkadot NuMail pallet (Module 13).",
       },
-      { name: "author", content: "NuMail" },
+      { name: "author", content: "Arosha Wanigasundara" },
       { property: "og:title", content: "NuMail — On-Chain Email on Polkadot" },
       {
         property: "og:description",
         content: "On-chain correspondence client for the Polkadot NuMail pallet (Module 13).",
       },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
+      { property: "og:image", content: "https://on-chain-email-pallet.projectfreedom.io/BlockchainEmailIcon.png" },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/BlockchainEmailIcon.png", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/BlockchainEmailIcon.png" },
+      { rel: "author", href: "https://github.com/AroshaWanigasundara" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
