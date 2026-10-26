@@ -1,5 +1,16 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "numail-onchain-mail",
+  "description": "NuMail: an on-chain, end-to-end encrypted email client for the NuMail Substrate pallet.",
+  "author": {
+    "name": "Arosha Wanigasundara",
+    "url": "https://github.com/AroshaWanigasundara"
+  },
+  "homepage": "https://github.com/AroshaWanigasundara/numail-onchain-mail#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AroshaWanigasundara/numail-onchain-mail.git"
+  },
+  "bugs": { "url": "https://github.com/AroshaWanigasundara/numail-onchain-mail/issues" },
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -76,7 +87,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@lovable.dev/vite-tanstack-config": "2.26.5",
+    "lightningcss": "^1.30.0",
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
