@@ -1,17 +1,17 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
+import tsConfigPaths from "vite-tsconfig-paths";
+import viteReact from "@vitejs/plugin-react";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { nitro } from "nitro/vite";
 
 /**
  * The Polkadot SDK is browser-only here: it is loaded through dynamic imports
  * that never execute during SSR. Several @polkadot packages do not publish
- * `workerd` export conditions, which breaks the Cloudflare Worker build, so we
- * replace them with an inert stub in every non-client environment.
+ * `workerd` export conditions, so we replace them with an inert stub in every
+ * non-client environment.
  */
 const stubPolkadotOnServer = (): Plugin => {
   const VIRTUAL = "\0polkadot-server-stub";
@@ -39,13 +39,31 @@ export default {};
   };
 };
 
-export default defineConfig({
-  plugins: [stubPolkadotOnServer()],
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
+export default defineConfig(({ command }) => ({
+  plugins: [
+    tailwindcss(),
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tanstackStart({
+      importProtection: {
+        behavior: "error",
+        client: { files: ["**/server/**"], specifiers: ["server-only"] },
+      },
+      // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
+      server: { entry: "server" },
+    }),
+    // Build a Node.js server (behind nginx); only needed for `vite build`.
+    ...(command === "build" ? [nitro({ preset: "node-server" })] : []),
+    viteReact(),
+    stubPolkadotOnServer(),
+  ],
+  css: { transformer: "lightningcss" },
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
   },
-  // Build a Node.js server (behind nginx) instead of the default Cloudflare Worker output.
-  nitro: { preset: "node-server" },
-});
+  optimizeDeps: {
+    include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"],
+    ignoreOutdatedRequests: true,
+  },
+  server: { host: "::", port: 8080 },
+}));
