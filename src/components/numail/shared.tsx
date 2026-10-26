@@ -62,3 +62,24 @@ export const GLOSSARY = {
   anchored:
     "Attachments must first be anchored on DNC (Module 2). NuMail stores only the anchor reference, never the file bytes.",
 } as const;
+
+export const DEVELOPER = {
+  name: "Arosha Wanigasundara",
+  repo: "https://github.com/AroshaWanigasundara/numail-onchain-mail",
+} as const;
+
+export function DeveloperCredit({ className = "" }: { className?: string }) {
+  return (
+    <p className={`text-[11px] text-muted-foreground ${className}`}>
+      NuMail · Developed by{" "}
+      <a
+        href={DEVELOPER.repo}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="underline underline-offset-2 hover:text-foreground"
+      >
+        {DEVELOPER.name}
+      </a>
+    </p>
+  );
+}
