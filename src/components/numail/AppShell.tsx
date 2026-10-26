@@ -34,7 +34,7 @@ import { ComposeDialog } from "./ComposeDialog";
 import { CreateMailboxCard } from "./CreateMailboxCard";
 import { NetworkSettings } from "./NetworkSettings";
 import { ConnectionBadge } from "./ConnectionBadge";
-import { shortAddr } from "./shared";
+import { shortAddr, DeveloperCredit } from "./shared";
 import { SystemNoticeDialog } from "./SystemNoticeDialog";
 import { ARCHIVE_PREFIX } from "@/lib/numail/archive";
 
@@ -205,8 +205,9 @@ function SidebarBody({
           >
             <LogOut className="h-4 w-4" />
             Disconnect wallet
-          </button>
+          </button>          
         )}
+        <DeveloperCredit className="px-3 pt-3" />
       </div>
     </div>
   );
@@ -275,7 +276,7 @@ function ConnectWalletScreen() {
       </div>
 
       <SystemNoticeDialog open={noticeOpen} onOpenChange={setNoticeOpen} />
-      
+      <DeveloperCredit className="mt-6 text-center" />
     </div>
   );
 }
